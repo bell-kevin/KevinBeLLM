@@ -1,0 +1,15 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img">
+  <title>KevinBeLLM</title>
+  <defs>
+    <linearGradient id="g" x1="8" y1="5" x2="40" y2="43" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#a0ffd0"/>
+      <stop offset="1" stop-color="#4fd99c"/>
+    </linearGradient>
+  </defs>
+  <rect width="48" height="48" rx="13" fill="#10231e"/>
+  <path d="M14 12v24M34 12 19.5 25.8M20 21l14 15" fill="none" stroke="url(#g)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="14" cy="12" r="2.4" fill="#effbf5"/>
+  <circle cx="34" cy="12" r="2.4" fill="#effbf5"/>
+  <circle cx="34" cy="36" r="2.4" fill="#effbf5"/>
+</svg>

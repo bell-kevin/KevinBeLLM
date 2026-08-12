@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+set -euo pipefail
+
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+engine="$("${project_dir}/scripts/container-engine.sh")"
+args=()
+
+while (( "$#" )); do
+  if [[ "$1" == "-f" || "$1" == "--file" ]]; then
+    if (( "$#" < 2 )); then
+      echo "$1 requires a Compose file path." >&2
+      exit 2
+    fi
+    compose_file="$2"
+    args+=("$1" "${compose_file}")
+    shift 2
+    if [[ "${engine}" == "podman" ]]; then
+      podman_override="$(dirname -- "${compose_file}")/compose.podman.yaml"
+      if [[ -f "${podman_override}" ]]; then
+        args+=(-f "${podman_override}")
+      fi
+    fi
+  else
+    args+=("$1")
+    shift
+  fi
+done
+
+if [[ "${engine}" == "podman" ]]; then
+  if ! command -v podman-compose >/dev/null 2>&1; then
+    echo "Podman is installed, but podman-compose is unavailable." >&2
+    echo "Install podman-compose >= 1.4.1; implicit providers are not used." >&2
+    exit 1
+  fi
+
+  compose_version="$(podman-compose --version 2>/dev/null | sed -nE 's/.*[^0-9]([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -n 1)"
+  minimum_version="1.4.1"
+  if [[ -z "${compose_version}" ]] || \
+     [[ "$(printf '%s\n' "${minimum_version}" "${compose_version}" | sort -V | head -n 1)" != "${minimum_version}" ]]; then
+    echo "podman-compose >= ${minimum_version} is required; found ${compose_version:-an unknown version}." >&2
+    echo "Ubuntu 24.04's 1.0.6 package does not enforce service health dependencies." >&2
+    exit 1
+  fi
+
+  exec podman-compose "${args[@]}"
+fi
+
+exec docker compose "${args[@]}"

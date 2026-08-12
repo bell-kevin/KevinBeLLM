@@ -1,0 +1,129 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#071310">
+    <meta name="referrer" content="no-referrer">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
+    >
+    <meta
+      name="description"
+      content="Sign in to the private KevinBeLLM workspace running on personal hardware."
+    >
+    <title>Sign in · KevinBeLLM</title>
+    <link rel="icon" href="mark.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+    <script src="login.js" defer></script>
+  </head>
+  <body class="login-body">
+    <a class="skip-link" href="#sign-in">Skip to sign in</a>
+    <div class="page-glow page-glow-one" aria-hidden="true"></div>
+    <div class="page-glow page-glow-two" aria-hidden="true"></div>
+
+    <main class="login-layout">
+      <section class="login-intro" aria-labelledby="welcome-title">
+        <a class="brand brand-large" href="./login.html" aria-label="KevinBeLLM sign in">
+          <img src="mark.svg" width="44" height="44" alt="">
+          <span>KevinBeLLM</span>
+        </a>
+
+        <div class="login-copy">
+          <p class="eyebrow"><span aria-hidden="true"></span> Private AI workspace</p>
+          <h1 id="welcome-title">Your hardware.<br><em>Your conversation.</em></h1>
+          <p>
+            Sign in to use local models and intentionally connected tools. Access is limited
+            to accounts created by this system’s owner.
+          </p>
+        </div>
+
+        <div class="boundary-summary">
+          <span class="boundary-icon" aria-hidden="true">◇</span>
+          <p>
+            Model inference runs on the host laptop. If you invoke web, news, weather, or
+            Hugging Face tools, the query and retrieved data leave the device.
+          </p>
+        </div>
+      </section>
+
+      <section class="login-panel" id="sign-in" aria-labelledby="sign-in-title">
+        <div class="login-card">
+          <div class="login-card-heading">
+            <p class="kicker">Authorized access</p>
+            <h2 id="sign-in-title">Welcome back</h2>
+            <p>Use the credentials supplied by the system owner.</p>
+          </div>
+
+          <form id="loginForm" action="/api/auth/login" method="post">
+            <div class="field-group">
+              <label for="email">Email address</label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                inputmode="email"
+                autocomplete="username"
+                autocapitalize="none"
+                spellcheck="false"
+                maxlength="254"
+                required
+              >
+            </div>
+
+            <div class="field-group">
+              <div class="field-label-row">
+                <label for="password">Password</label>
+              </div>
+              <div class="password-field">
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autocomplete="current-password"
+                  maxlength="1024"
+                  required
+                >
+                <button
+                  class="password-toggle"
+                  id="passwordToggle"
+                  type="button"
+                  aria-controls="password"
+                  aria-pressed="false"
+                >Show</button>
+              </div>
+            </div>
+
+            <p class="form-message" id="loginMessage" role="alert" aria-live="polite" hidden></p>
+
+            <button class="primary-button login-submit" id="loginSubmit" type="submit">
+              <span class="button-label">Sign in</span>
+              <span class="button-arrow" aria-hidden="true">→</span>
+              <span class="button-spinner" aria-hidden="true"></span>
+            </button>
+          </form>
+
+          <noscript>
+            <p class="noscript-note">JavaScript is required to submit credentials as protected JSON.</p>
+          </noscript>
+
+          <div class="login-security-note">
+            <span aria-hidden="true">●</span>
+            <p>
+              Credentials are sent only to this host over the current connection. They are
+              never stored in browser local storage.
+            </p>
+          </div>
+        </div>
+
+        <footer class="login-footer">
+          <span>FLOSS · AGPL-3.0-or-later</span>
+          <a href="/source">Source code <span aria-hidden="true">↗</span></a>
+        </footer>
+      </section>
+    </main>
+  </body>
+</html>

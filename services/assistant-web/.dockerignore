@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+.git/
+tests/
+requirements-dev.txt
+requirements-dev.lock

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">KevinBeLLM mark</title>
+  <desc id="desc">A geometric mint spark inside a rounded dark tile.</desc>
+  <defs>
+    <linearGradient id="tile" x1="8" y1="4" x2="57" y2="61" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#173b31"/>
+      <stop offset="1" stop-color="#0b211b"/>
+    </linearGradient>
+    <linearGradient id="spark" x1="18" y1="14" x2="48" y2="52" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#b8ffda"/>
+      <stop offset="1" stop-color="#5de7a7"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="18" fill="url(#tile)" stroke="#77edb7" stroke-opacity=".34" stroke-width="2"/>
+  <path d="M32 12.5c1.5 9.7 4 15.2 7.2 18.3 3.1 3.2 8.6 5.7 18.3 7.2-9.7 1.5-15.2 4-18.3 7.2-3.2 3.1-5.7 8.6-7.2 18.3-1.5-9.7-4-15.2-7.2-18.3-3.1-3.2-8.6-5.7-18.3-7.2 9.7-1.5 15.2-4 18.3-7.2 3.2-3.1 5.7-8.6 7.2-18.3Z" fill="url(#spark)" transform="translate(0 -6) scale(1 .98)"/>
+  <circle cx="48.5" cy="16" r="3.2" fill="#7eb1ff"/>
+</svg>

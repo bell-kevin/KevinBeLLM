@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# The Python 3.12 base currently bundles an older pip. Upgrade it from an
+# integrity-pinned wheel before processing any application dependency files.
+pip==26.2.1 \
+    --hash=sha256:71138adf1f4ca900cdb7d289c21b7494329f2332b6d85f0e1c42108c0384ed3e

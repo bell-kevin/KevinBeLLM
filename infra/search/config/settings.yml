@@ -1,0 +1,72 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Local SearXNG profile for browser and LLM tool use.
+# The base defaults come from the exact SearXNG image pinned in compose.yaml.
+use_default_settings:
+  engines:
+    keep_only:
+      # General web search
+      - brave
+      - duckduckgo
+      - bing
+      - wikipedia
+      # Current news
+      - brave.news
+      - duckduckgo news
+      - bing news
+      - google news
+      # Direct discovery of models, datasets, and spaces
+      - huggingface
+      - huggingface datasets
+      - huggingface spaces
+
+general:
+  debug: false
+  instance_name: "KevinBeLLM Search"
+  enable_metrics: false
+
+search:
+  safe_search: 1
+  autocomplete: ""
+  favicon_resolver: ""
+  default_lang: "en-US"
+  formats:
+    - html
+    - json
+
+server:
+  # Network-facing values are also enforced with environment variables in
+  # compose.yaml. The host publication remains bound to 127.0.0.1 only.
+  port: 8080
+  bind_address: "0.0.0.0"
+  secret_key: "overridden-by-SEARXNG_SECRET"
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  method: "GET"
+
+ui:
+  default_locale: "en"
+  query_in_title: false
+  results_on_new_tab: true
+
+categories_as_tabs:
+  general:
+  news:
+
+outgoing:
+  request_timeout: 8.0
+  max_request_timeout: 15.0
+  pool_connections: 50
+  pool_maxsize: 20
+  enable_http2: true
+
+# Engines marked disabled in SearXNG's defaults must be enabled explicitly.
+engines:
+  - name: bing
+    disabled: false
+  - name: huggingface
+    disabled: false
+  - name: huggingface datasets
+    disabled: false
+  - name: huggingface spaces
+    disabled: false

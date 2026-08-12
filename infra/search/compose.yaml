@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: asus-kevin-search
+
+services:
+  searxng:
+    build:
+      context: .
+    image: asus-kevin-searxng:2026.7.28-c01178d03-h2.4.4.1
+    platform: linux/amd64
+    # The pinned image's root entrypoint recursively chowns bind mounts. Run
+    # Granian directly as the laptop user so configuration remains editable.
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    entrypoint:
+      - /usr/local/searxng/.venv/bin/granian
+    command:
+      - searx.webapp:app
+    restart: unless-stopped
+    ports:
+      # Deliberately unavailable to other LAN devices. Containers in a separate
+      # Compose project can reach this through host.docker.internal (see README).
+      - "127.0.0.1:${SEARXNG_HOST_PORT:-8888}:8080"
+    environment:
+      SEARXNG_BIND_ADDRESS: "0.0.0.0"
+      SEARXNG_PORT: "8080"
+      GRANIAN_PORT: "8080"
+      SEARXNG_BASE_URL: "http://127.0.0.1:${SEARXNG_HOST_PORT:-8888}/"
+      SEARXNG_SETTINGS_PATH: "/run/searxng-config/settings.yml"
+      SEARXNG_SECRET: "${SEARXNG_SECRET:?Set SEARXNG_SECRET in infra/search/.env}"
+      SEARXNG_LIMITER: "false"
+      SEARXNG_PUBLIC_INSTANCE: "false"
+      SEARXNG_METHOD: "GET"
+    volumes:
+      # We bypass the image entrypoint, so both its declared /etc/searxng
+      # volume and the explicit settings path can safely use the same RO files.
+      # The first mount also suppresses Docker's otherwise-writable anonymous
+      # volume at /etc/searxng.
+      - ./config:/etc/searxng:ro
+      - ./config:/run/searxng-config:ro
+      - ./data:/var/cache/searxng:rw
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    healthcheck:
+      test:
+        - CMD-SHELL
+        # Current SearXNG expects a client-IP header even for direct requests.
+        - >-
+          wget --quiet --spider --timeout=5 --header='X-Real-IP: 127.0.0.1'
+          http://127.0.0.1:8080/config || exit 1
+      interval: 30s
+      timeout: 8s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m

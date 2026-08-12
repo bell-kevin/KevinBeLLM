@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Bot limiting is disabled for this loopback-only service. Keeping an explicit
+# file prevents SearXNG from warning about a missing local configuration and
+# provides safe defaults if limiting is enabled later.
+[botdetection]
+ipv4_prefix = 32
+ipv6_prefix = 48
+trusted_proxies = []
+
+[botdetection.ip_limit]
+filter_link_local = false
+link_token = false
+
+[botdetection.ip_lists]
+block_ip = []
+pass_ip = [
+  "127.0.0.0/8",
+  "::1",
+]
+pass_searxng_org = false

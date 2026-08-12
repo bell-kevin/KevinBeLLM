@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[Unit]
+Description=KevinBeLLM authenticated remote browser assistant
+Documentation=https://github.com/bell-kevin/ASUS-KevinBeLLM
+Wants=network-online.target ollama.service
+After=network-online.target ollama.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=@PROJECT_DIR@
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=@PROJECT_DIR@/scripts/start-remote.sh
+ExecStop=@PROJECT_DIR@/scripts/stop.sh
+# A lingering user manager can start before Docker or the network is fully
+# usable during boot. Retry a failed startup instead of leaving remote access
+# offline until somebody logs in locally.
+Restart=on-failure
+RestartSec=30s
+TimeoutStartSec=0
+TimeoutStopSec=120
+
+[Install]
+WantedBy=default.target

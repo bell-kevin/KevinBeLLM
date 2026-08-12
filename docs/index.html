@@ -1,0 +1,204 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#07110f">
+    <meta
+      name="description"
+      content="KevinBeLLM is a local-first AI workspace with selectable models and controlled access to live web tools."
+    >
+    <meta property="og:title" content="KevinBeLLM — local intelligence, current context">
+    <meta
+      property="og:description"
+      content="A private AI workspace running on personal hardware, with controlled tools for live information."
+    >
+    <meta property="og:type" content="website">
+    <title>KevinBeLLM — local intelligence, current context</title>
+    <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="assets/styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <div class="ambient ambient-one" aria-hidden="true"></div>
+    <div class="ambient ambient-two" aria-hidden="true"></div>
+
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="./" aria-label="KevinBeLLM home">
+          <img src="assets/mark.svg" width="36" height="36" alt="">
+          <span>KevinBeLLM</span>
+        </a>
+        <nav aria-label="Primary navigation">
+          <a href="#capabilities">Capabilities</a>
+          <a href="#architecture">Architecture</a>
+          <a href="#boundaries">Privacy</a>
+          <a class="nav-launch" href="https://assistant.kevin-bell.com/">Open assistant</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow"><span aria-hidden="true"></span> Runs on personal hardware</p>
+          <h1 id="hero-title">Local intelligence.<br><em>Current context.</em></h1>
+          <p class="hero-summary">
+            A private AI workspace that keeps model inference close, lets you choose the
+            model for each conversation, and reaches the live web only through controlled tools.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="https://assistant.kevin-bell.com/">
+              Open the private assistant
+              <span aria-hidden="true">↗</span>
+            </a>
+            <a class="button button-secondary" href="#architecture">See how it works</a>
+          </div>
+          <p class="access-note">
+            <span class="lock" aria-hidden="true"></span>
+            The assistant is separate from this public page. Cloudflare Access asks authorized
+            users to sign in before the KevinBeLLM login is reachable.
+          </p>
+        </div>
+
+        <aside class="workspace-preview" aria-label="Illustration of the assistant workspace">
+          <div class="window-bar" aria-hidden="true">
+            <span></span><span></span><span></span>
+            <p>private workspace</p>
+          </div>
+          <div class="preview-body">
+            <div class="model-row">
+              <div>
+                <span class="field-label">Active model</span>
+                <strong>Qwen local</strong>
+              </div>
+              <span class="selector" aria-hidden="true">Change <b>⌄</b></span>
+            </div>
+            <div class="conversation">
+              <div class="avatar" aria-hidden="true">K</div>
+              <div class="message">
+                <p class="message-label">Assistant</p>
+                <p>I can reason locally, then search when the answer depends on what changed today.</p>
+                <div class="tool-pills" aria-label="Available live tools">
+                  <span>Web</span>
+                  <span>News</span>
+                  <span>Weather</span>
+                  <span>Model discovery</span>
+                </div>
+              </div>
+            </div>
+            <div class="prompt-box" aria-hidden="true">
+              <span>Ask anything…</span>
+              <b>↑</b>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="capabilities section" id="capabilities" aria-labelledby="capabilities-title">
+        <div class="section-heading">
+          <p class="kicker">Built for useful independence</p>
+          <h2 id="capabilities-title">Private by default, connected on purpose.</h2>
+          <p>The model, interface, and retrieval services live together on the laptop.</p>
+        </div>
+        <div class="feature-grid">
+          <article>
+            <span class="feature-number">01</span>
+            <h3>Local-first inference</h3>
+            <p>Prompts are answered by models running on owned hardware instead of a required hosted model API.</p>
+          </article>
+          <article>
+            <span class="feature-number">02</span>
+            <h3>Model choice</h3>
+            <p>Switch between installed models in the browser, with a strong default ready for everyday use.</p>
+          </article>
+          <article>
+            <span class="feature-number">03</span>
+            <h3>Live, cited context</h3>
+            <p>Purpose-built tools can retrieve web, news, weather, and model information when freshness matters.</p>
+          </article>
+          <article>
+            <span class="feature-number">04</span>
+            <h3>Layered access</h3>
+            <p>An outbound-only tunnel and identity policy protect remote access, alongside KevinBeLLM authentication.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="architecture section" id="architecture" aria-labelledby="architecture-title">
+        <div class="section-heading compact">
+          <p class="kicker">Request path</p>
+          <h2 id="architecture-title">No router port-forwarding required.</h2>
+          <p>Remote traffic follows an authenticated path; local use stays on the laptop.</p>
+        </div>
+        <ol class="flow" aria-label="Remote request architecture">
+          <li>
+            <span class="flow-icon" aria-hidden="true">01</span>
+            <div><strong>Your browser</strong><small>HTTPS request</small></div>
+          </li>
+          <li>
+            <span class="flow-icon" aria-hidden="true">02</span>
+            <div><strong>Cloudflare Access</strong><small>Identity policy</small></div>
+          </li>
+          <li>
+            <span class="flow-icon" aria-hidden="true">03</span>
+            <div><strong>Named Tunnel</strong><small>Outbound connector</small></div>
+          </li>
+          <li>
+            <span class="flow-icon" aria-hidden="true">04</span>
+            <div><strong>KevinBeLLM</strong><small>AGPL app + local models</small></div>
+          </li>
+        </ol>
+        <p class="flow-caption">
+          The public landing page contains no login form, tunnel credential, model endpoint, or live system status.
+        </p>
+      </section>
+
+      <section class="boundaries section" id="boundaries" aria-labelledby="boundaries-title">
+        <div class="boundary-card">
+          <div>
+            <p class="kicker">Clear boundaries</p>
+            <h2 id="boundaries-title">Local does not mean invisible.</h2>
+          </div>
+          <div class="boundary-copy">
+            <p>
+              Model inference can remain local, but an intentional web search sends the search query
+              to configured providers and downloads selected pages. Remote access also passes through
+              Cloudflare before reaching the laptop.
+            </p>
+            <p>
+              Treat model output as a starting point: verify important medical, legal, financial,
+              security, and operational decisions against primary sources.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="final-cta section" aria-labelledby="cta-title">
+        <p class="kicker">Authorized users</p>
+        <h2 id="cta-title">Enter the private workspace.</h2>
+        <p>Cloudflare Access will handle identity verification on the assistant hostname.</p>
+        <a class="button button-primary" href="https://assistant.kevin-bell.com/">
+          Continue to authenticated access
+          <span aria-hidden="true">↗</span>
+        </a>
+      </section>
+    </main>
+
+    <footer>
+      <div>
+        <a class="brand footer-brand" href="./">
+          <img src="assets/mark.svg" width="30" height="30" alt="">
+          <span>KevinBeLLM</span>
+        </a>
+        <p>Local AI, built to stay useful as the world changes.</p>
+      </div>
+      <p class="footer-meta">
+        No trackers. No browser-side authentication. No secrets in this site.
+        <a href="https://github.com/bell-kevin/ASUS-KevinBeLLM">AGPL source ↗</a>
+      </p>
+    </footer>
+  </body>
+</html>

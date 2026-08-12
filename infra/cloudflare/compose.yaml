@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: asus-kevin-remote-access
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:2026.7.3@sha256:b392761b711c0e5649d9b64e1fc9a10ba0563fa3e712ed7c26bde5cc1fbe9059
+    platform: linux/amd64
+    # Match the owner of secrets/tunnel-token so the ignored 0600 file stays
+    # readable without running the connector as root.
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    network_mode: host
+    command:
+      - tunnel
+      - --metrics
+      - "127.0.0.1:${CLOUDFLARED_METRICS_PORT:-20241}"
+      - --loglevel
+      - "${CLOUDFLARED_LOG_LEVEL:-info}"
+      - run
+      - --token-file
+      - /run/secrets/tunnel-token
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    secrets:
+      - source: tunnel_token
+        target: tunnel-token
+        uid: "${LOCAL_UID:-1000}"
+        gid: "${LOCAL_GID:-1000}"
+        # Quote the octal value; podman-compose warns that file-secret modes
+        # are ignored, so the host source is independently enforced as 0600.
+        mode: "0400"
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    healthcheck:
+      test:
+        - CMD
+        - cloudflared
+        - --no-autoupdate
+        - tunnel
+        - --metrics
+        - "127.0.0.1:${CLOUDFLARED_METRICS_PORT:-20241}"
+        - ready
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+
+secrets:
+  tunnel_token:
+    # Create this ignored file only after the named tunnel and Access app exist.
+    file: ./secrets/tunnel-token

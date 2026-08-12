@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+services:
+  assistant-web:
+    # Map the rootless host user to the image's unprivileged application UID.
+    # This lets UID 10001 write the named SQLite volume without recursive chown.
+    userns_mode: "keep-id:uid=10001,gid=10001"
