@@ -1,4 +1,4 @@
-# KevinBeLLM
+# kevinBeLLM
 
 Licensed `AGPL-3.0-or-later`; see [LICENSE](LICENSE) and
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Third-party programs, model
