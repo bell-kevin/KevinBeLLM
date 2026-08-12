@@ -2,6 +2,8 @@
 
 # kevinBeLLM
 
+https://bell-kevin.github.io/ASUS-KevinBeLLM/
+
 https://assistant.kevin-bell.com/
 
 Licensed `AGPL-3.0-or-later`; see [LICENSE](LICENSE) and
@@ -177,6 +179,8 @@ Browser requests disable the Qwen thinking mode so a small response budget is
 not consumed solely by hidden reasoning. Training a new foundation model is
 unnecessary for current facts: the read-only internet tools supply those at
 request time; fine-tuning would instead change behavior or style.
+
+https://bell-kevin.github.io/ASUS-KevinBeLLM/
 
 https://assistant.kevin-bell.com/
 
