@@ -52,6 +52,11 @@ jobs:
         run: |
           node --check services/assistant-web/static/app.js
           node --check services/assistant-web/static/login.js
+          node --check services/assistant-web/static/markdown.js
+
+      - name: Run browser Markdown renderer tests
+        working-directory: services/assistant-web
+        run: node --test tests/markdown.test.mjs
 
       - name: Check PowerShell syntax
         shell: pwsh

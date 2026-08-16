@@ -18,6 +18,8 @@
     <title>Workspace · KevinBeLLM</title>
     <link rel="icon" href="mark.svg" type="image/svg+xml">
     <link rel="stylesheet" href="styles.css">
+    <!-- Deferred scripts run in order, so the renderer is defined before app.js. -->
+    <script src="markdown.js" defer></script>
     <script src="app.js" defer></script>
   </head>
   <body class="app-body">
@@ -226,7 +228,7 @@
             </form>
             <div class="composer-footnote" id="composerHint">
               <span>Enter to send · Shift+Enter for a new line</span>
-              <span>Plain-text output · verify important answers</span>
+              <span>Formatted output · verify important answers</span>
               <span class="composer-note" id="composerNote" hidden></span>
             </div>
           </div>

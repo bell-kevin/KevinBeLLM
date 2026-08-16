@@ -442,7 +442,9 @@
     label.append(modelLabel);
     const activityList = createElement("div", "activity-list");
     activityList.setAttribute("aria-live", "polite");
-    const text = createElement("p", "message-text");
+    // A div, not a p: the finished answer is re-rendered as Markdown blocks,
+    // and lists or code blocks cannot legally nest inside a paragraph.
+    const text = createElement("div", "message-text");
     text.setAttribute("aria-live", "off");
     const textNode = document.createTextNode("");
     text.append(textNode);
@@ -457,6 +459,7 @@
       modelLabel,
       activityList,
       statusItem: null,
+      textElement: text,
       textNode,
       content: "",
     };
@@ -514,38 +517,37 @@
     scrollConversation(true);
   }
 
-  function safeExternalUrl(rawUrl) {
-    if (
-      typeof rawUrl !== "string"
-      || rawUrl.length > 4_096
-      || !/^https?:\/\//i.test(rawUrl)
-    ) {
-      return null;
+  // markdown.js is a separate deferred script. Destructuring it here would make
+  // a failed load a top-level TypeError that aborts the rest of this file and
+  // leaves an inert page. Degrading instead keeps the workspace usable: answers
+  // stay readable as the plain streamed text, and the citation card is dropped
+  // rather than rendered through an unvetted URL check.
+  const markdown = globalThis.kevinbellmMarkdown ?? null;
+
+  function renderMarkdownInto(view, text) {
+    if (!markdown) {
+      return;
     }
+    let rendered;
     try {
-      const parsed = new URL(rawUrl);
-      if (
-        (parsed.protocol !== "http:" && parsed.protocol !== "https:")
-        || parsed.username
-        || parsed.password
-      ) {
-        return null;
-      }
-      return parsed.href;
+      rendered = markdown.renderMarkdown(text);
     } catch {
-      return null;
+      // Any parser surprise must never cost the user their answer.
+      return;
     }
+    view.textElement.replaceChildren(rendered);
+    view.textElement.classList.add("is-rendered");
   }
 
   function renderSources(view, sources) {
-    if (!Array.isArray(sources)) {
+    if (!Array.isArray(sources) || !markdown) {
       return;
     }
     const safeSources = sources.slice(0, 20).map((source) => {
       if (!source || typeof source !== "object") {
         return null;
       }
-      const url = safeExternalUrl(source.url);
+      const url = markdown.safeExternalUrl(source.url);
       if (!url) {
         return null;
       }
@@ -751,7 +753,9 @@
           block.append(body);
           view.reasoningBlock = block;
           view.reasoningSummary = summary;
-          view.textNode.parentNode.insertBefore(block, view.textNode);
+          // A sibling of the answer element, not a child: "done" and "reset"
+          // both replace that element's children wholesale.
+          view.body.insertBefore(block, view.textElement);
         }
         if (view.reasoningText.length < MAX_RESPONSE_CHARS) {
           view.reasoningText.appendData(thought);
@@ -764,6 +768,8 @@
         // Drop it so the next round's answer does not append to dead text.
         view.content = "";
         view.textNode.data = "";
+        view.textElement.replaceChildren(view.textNode);
+        view.textElement.classList.remove("is-rendered");
         break;
       case "done":
         streamState.done = true;
@@ -774,10 +780,13 @@
           if (payload.content.length > MAX_RESPONSE_CHARS) {
             throw new Error("The model response exceeded the safe display limit.");
           }
-          // The streamed text was a live preview. Replace it with the server's
-          // authoritative answer, which may include appended source URLs.
+          // The streamed text was a plain live preview. Replace it with the
+          // server's authoritative answer, then render that answer's Markdown.
+          // state.messages keeps the raw text, so the model always sees back
+          // exactly what it wrote.
           view.content = payload.content;
           view.textNode.data = payload.content;
+          renderMarkdownInto(view, payload.content);
         }
         if (typeof payload.model === "string" && payload.model) {
           const matchingModel = state.models.find((model) => model.id === payload.model);
