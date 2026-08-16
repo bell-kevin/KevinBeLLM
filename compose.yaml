@@ -32,7 +32,9 @@ services:
       - assistant-data:/data
     depends_on:
       live-tools:
-        condition: service_healthy
+        # start.sh performs an explicit HTTP readiness check. This avoids
+        # depending on Podman 4.9's broken rootless systemd health timers.
+        condition: service_started
     read_only: true
     cap_drop:
       - ALL

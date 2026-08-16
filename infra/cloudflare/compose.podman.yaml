@@ -2,3 +2,7 @@
 services:
   cloudflared:
     userns_mode: keep-id
+    # Remote startup performs an explicit readiness check instead of relying on
+    # Podman 4.9's unavailable rootless systemd health timer.
+    healthcheck:
+      disable: true
