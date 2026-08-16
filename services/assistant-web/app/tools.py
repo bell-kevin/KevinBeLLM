@@ -21,6 +21,12 @@ from .config import Settings
 USER_AGENT = "KevinBeLLM/1.0 (+https://github.com/bell-kevin/KevinBeLLM)"
 MAX_JSON_BYTES = 1_048_576
 MAX_REDIRECTS = 3
+# Sending "all" leaves the upstream engines with no locale hint, so they fall
+# back to geolocating the search container's exit IP. That turned neutral
+# queries into local-business listings ("Dr. Ben Carson" returned nearby
+# clinic directories). An explicit locale keeps results stable wherever the
+# host runs, and matches search.default_lang in infra/search/config/settings.yml.
+SEARCH_LANGUAGE = "en-US"
 
 
 class ToolError(Exception):
@@ -469,7 +475,7 @@ class ToolRunner:
         params: dict[str, Any] = {
             "q": query,
             "format": "json",
-            "language": "all",
+            "language": SEARCH_LANGUAGE,
             "safesearch": 1,
         }
         if news:
