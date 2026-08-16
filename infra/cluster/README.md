@@ -142,20 +142,70 @@ RPC/security arguments cannot be changed there:
 - hardened systemd filesystem, capability, namespace, and privilege controls.
 
 The measured persistent configuration is 32,768-token context, batch 2,048,
-ubatch 512, eight CPU threads, one request slot, Q8 K/V cache, flash attention,
-memory mapping, and Qwen3.5 MTP with draft maximum 4. Generation holds at
-roughly 62-66 tokens/second from 130-token up to 23,000-token prompts, with
-3,624 MiB VRAM free and temperatures in the high 40s to low 50s °C. A forced
-OpenAI-compatible tool request returned exactly one parsed weather call. These
-are measurements of this Machine A, not general guarantees.
+ubatch 512, eight CPU threads, one request slot, f16 K/V cache, flash attention,
+memory mapping, and Qwen3.5 MTP with draft maximum 2. Generation ranges from
+roughly 53 to 69 tokens/second with a median near 62, with 3,322 MiB VRAM free
+and temperatures in the high 40s to low 50s °C. A forced OpenAI-compatible tool
+request returned exactly one parsed weather call. These are measurements of this
+Machine A, not general guarantees.
 
-Three settings were swept on this hardware before being fixed:
+That range is set by MTP draft acceptance, which depends on how predictable the
+output text is. Generation speed tracks acceptance almost linearly, so the
+workload matters far more than the request size. Measured at a 256-token
+generation budget, prompt caching off, at the temperature 0.3 the application
+actually sends:
+
+| Output type | Generation | MTP draft acceptance |
+| --- | ---: | ---: |
+| Code, arithmetic reasoning | 68-69 tokens/s | 87-89% |
+| Structured data, lists, short factual answers, translation | 61-63 tokens/s | 71-77% |
+| Discursive technical prose, creative writing | 53-57 tokens/s | 56-62% |
+
+Benchmark at the temperature the application sends, not at 0. Sampling
+temperature feeds back into draft acceptance: dropping 0.3 to 0 raised a prose
+answer from 52 to 59 tokens/second, while a structured JSON answer did not move
+at all, because its output was already near-deterministic. Measuring at 0
+overstates the prose end of the range by roughly 12 percent.
+
+Answer length does not cost speed. Forcing generation from 128 to 4,096 tokens
+with `ignore_eos` raised the rate rather than lowering it, because repetitive
+filler drafts better than real prose. There is no KV-growth penalty from long
+answers worth planning around. Prompt length is nearly free up to about 7,500
+tokens (65.0 tokens/second at a tiny prompt, 64.9 at 7,569) and costs about 11
+percent by 23,949, all measured at temperature 0.
+
+When comparing future runs, hold the workload fixed. Two prompts of identical
+length and identical generation budget differed by 15 tokens/second purely on
+output type, which is wider than most of the tuning changes below. A sweep run
+against a single prompt will rank these settings wrongly.
+
+Settings swept on this hardware before being fixed:
 
 | Setting | Swept range | Chosen | Finding |
 | --- | --- | ---: | --- |
-| Context size | 4,096 - 32,768 | 32,768 | KV cache is unusually cheap: 32K costs only ~716 MiB and ~5% generation speed over 4K. The old 4,096 gave up 8x context for almost nothing. |
-| MTP draft depth | 1 - 8 | 4 | 2 and 4 tie near the top (~64 tok/s); 1 and 6 drop to ~54. The 3 -> 4 gain is ~2-3%, near run-to-run noise. |
+| Context size | 4,096 - 32,768 | 32,768 | KV cache is unusually cheap, so the old 4,096 gave up 8x context for almost nothing. |
+| K/V cache type | q8_0, f16 | f16 | Identical on short prompts, so an early short-prompt comparison called it a wash. At depth the dequantization step is real: +8% at a 23,949-token prompt with draft acceptance matched. Costs about 500 MiB. |
+| MTP draft depth | 1 - 8 | 2 | Peak of a clear inverted U. See the table below. |
 | ubatch | 256 - 2,048 | 512 | All values land within 2% of ~1,350 tokens/second. Prefill is GPU-compute-bound here, not batch-bound, so the smallest sufficient value keeps VRAM free. |
+
+The draft-depth sweep, on f16 K/V at temperature 0, as the mean over the ten
+output types above and as a single deep-context probe:
+
+| `--spec-draft-n-max` | Ten-workload mean | 23,949-token prompt |
+| ---: | ---: | ---: |
+| 1 | 56.8 tokens/s | 51.0 tokens/s |
+| **2** | **64.1 tokens/s** | **57.8 tokens/s** |
+| 3 | 65.0 tokens/s | 55.5 tokens/s |
+| 4 | 63.6 tokens/s | 53.1 tokens/s |
+| 6 | 55.7 tokens/s | 43.8 tokens/s |
+| 8 | 57.9 tokens/s | 42.3 tokens/s |
+
+Depth 3 edges depth 2 on short prompts, but 2 wins at every realistic prompt
+length and by 4 percent at 24,000 tokens, so 2 is the setting. Depth 2 also
+compresses the spread rather than raising the peak: against the previous q8_0
+and depth-4 configuration, the slowest workload rose from 40 to 53 tokens/second
+while the fastest fell from 78 to 69. For an interactive assistant the floor
+matters more than the ceiling, so this is a deliberate trade.
 
 Prefill rate, not generation rate, sets time to first token: about 0.3 s at 130
 prompt tokens, 2.6 s at 3,200, and 18 s at 23,000. That ceiling is a property of

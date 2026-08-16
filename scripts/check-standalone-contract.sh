@@ -65,10 +65,10 @@ for setting in \
   'Environment=KEVINBELLM_LLAMA_THREADS=8' \
   'Environment=KEVINBELLM_LLAMA_PARALLEL=1' \
   'Environment=KEVINBELLM_LLAMA_GPU_LAYERS=all' \
-  'Environment=KEVINBELLM_LLAMA_CACHE_TYPE_K=q8_0' \
-  'Environment=KEVINBELLM_LLAMA_CACHE_TYPE_V=q8_0' \
+  'Environment=KEVINBELLM_LLAMA_CACHE_TYPE_K=f16' \
+  'Environment=KEVINBELLM_LLAMA_CACHE_TYPE_V=f16' \
   'Environment=KEVINBELLM_LLAMA_FLASH_ATTN=on' \
-  'Environment=KEVINBELLM_LLAMA_SPEC_DRAFT_N_MAX=4'; do
+  'Environment=KEVINBELLM_LLAMA_SPEC_DRAFT_N_MAX=2'; do
   require_text "${standalone_unit}" "${setting}"
 done
 
