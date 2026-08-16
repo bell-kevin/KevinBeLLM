@@ -94,10 +94,10 @@ fi
 
 if [[ "${role}" != 'worker' ]] && command -v curl >/dev/null 2>&1; then
   cluster_info "llama-server health response"
-  curl --silent --show-error --max-time 5 http://127.0.0.1:8080/health || result=1
+  curl --silent --show-error --fail-with-body --max-time 5 http://127.0.0.1:8080/health || result=1
   printf '\n'
   cluster_info "llama-server model response"
-  curl --silent --show-error --max-time 5 http://127.0.0.1:8080/v1/models || result=1
+  curl --silent --show-error --fail-with-body --max-time 5 http://127.0.0.1:8080/v1/models || result=1
   printf '\n'
 fi
 
