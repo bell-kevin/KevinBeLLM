@@ -4,19 +4,15 @@ set -euo pipefail
 
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
-echo "Ollama"
-systemctl --user --no-pager --full status ollama.service 2>/dev/null | sed -n '1,8p' || true
-echo
-curl --fail --silent http://127.0.0.1:11434/api/tags \
-  | python3 -c 'import json,sys; data=json.load(sys.stdin); print("Models:"); [print("  -", item["name"]) for item in data.get("models", [])]' \
-  || echo "Models: Ollama API unavailable"
+echo "Inference"
+"${project_dir}/scripts/inference.sh" status
 
 echo
 echo "Application containers"
 "${project_dir}/scripts/compose.sh" \
   -f "${project_dir}/compose.yaml" \
   --env-file "${project_dir}/.env" \
-  -p asus-kevin-bellm \
+  -p kevinbellm \
   ps
 
 echo
@@ -28,7 +24,7 @@ fi
 "${project_dir}/scripts/compose.sh" \
   -f "${project_dir}/infra/cloudflare/compose.yaml" \
   --env-file "${remote_env}" \
-  -p asus-kevin-remote-access \
+  -p kevinbellm-remote-access \
   ps
 
 echo
@@ -36,5 +32,5 @@ echo "Search container"
 "${project_dir}/scripts/compose.sh" \
   -f "${project_dir}/infra/search/compose.yaml" \
   --env-file "${project_dir}/infra/search/.env" \
-  -p asus-kevin-search \
+  -p kevinbellm-search \
   ps

@@ -1,17 +1,20 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 [Unit]
 Description=KevinBeLLM local browser assistant
-Documentation=https://github.com/bell-kevin/ASUS-KevinBeLLM
-Wants=network-online.target ollama.service
-After=network-online.target ollama.service
+Documentation=https://github.com/bell-kevin/KevinBeLLM
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+Conflicts=kevinbellm-remote.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-WorkingDirectory=@PROJECT_DIR@
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=@PROJECT_DIR@/scripts/start.sh
-ExecStop=@PROJECT_DIR@/scripts/stop.sh
+ExecStart="@PROJECT_DIR@/scripts/start.sh"
+ExecStop="@PROJECT_DIR@/scripts/stop.sh"
+Restart=on-failure
+RestartSec=30
 TimeoutStartSec=0
 TimeoutStopSec=120
 

@@ -37,6 +37,8 @@
     accountAvatar: document.getElementById("accountAvatar"),
     changePasswordButton: document.getElementById("changePasswordButton"),
     logoutButton: document.getElementById("logoutButton"),
+    reasoningToggle: document.getElementById("reasoningToggle"),
+    composerNote: document.getElementById("composerNote"),
     modelSelect: document.getElementById("modelSelect"),
     modelMeta: document.getElementById("modelMeta"),
     recommendedBadge: document.getElementById("recommendedBadge"),
@@ -73,7 +75,13 @@
     stopRequested: false,
     timeoutFired: false,
     passwordBusy: false,
+    reasoning: false,
   };
+
+  function setComposerHint(text) {
+    elements.composerNote.textContent = text;
+    elements.composerNote.hidden = !text;
+  }
 
   function createElement(tagName, className, text) {
     const node = document.createElement(tagName);
@@ -568,7 +576,7 @@
     view.body.append(block);
   }
 
-  function buildBoundedRequest(allMessages, modelId) {
+  function buildBoundedRequest(allMessages, modelId, reasoning) {
     const selected = [];
     let charCount = 0;
     let wasTrimmed = false;
@@ -598,11 +606,11 @@
       wasTrimmed = true;
     }
 
-    let serialized = JSON.stringify({ model: modelId, messages: selected });
+    let serialized = JSON.stringify({ model: modelId, messages: selected, reasoning: !!reasoning });
     while (new TextEncoder().encode(serialized).byteLength > MAX_REQUEST_BYTES && selected.length > 1) {
       selected.shift();
       wasTrimmed = true;
-      serialized = JSON.stringify({ model: modelId, messages: selected });
+      serialized = JSON.stringify({ model: modelId, messages: selected, reasoning: !!reasoning });
     }
     if (new TextEncoder().encode(serialized).byteLength > MAX_REQUEST_BYTES) {
       throw new Error("The message is too large to send safely.");
@@ -728,8 +736,49 @@
         scrollConversation();
         break;
       }
+      case "reasoning": {
+        const thought = typeof payload.content === "string" ? payload.content : "";
+        if (!thought) {
+          break;
+        }
+        if (!view.reasoningBlock) {
+          const block = createElement("details", "reasoning-block");
+          const summary = createElement("summary", "reasoning-summary", "Thinking…");
+          block.append(summary);
+          view.reasoningText = document.createTextNode("");
+          const body = createElement("div", "reasoning-body");
+          body.append(view.reasoningText);
+          block.append(body);
+          view.reasoningBlock = block;
+          view.reasoningSummary = summary;
+          view.textNode.parentNode.insertBefore(block, view.textNode);
+        }
+        if (view.reasoningText.length < MAX_RESPONSE_CHARS) {
+          view.reasoningText.appendData(thought);
+        }
+        scrollConversation();
+        break;
+      }
+      case "reset":
+        // A tool round streamed a preamble that its own tool calls superseded.
+        // Drop it so the next round's answer does not append to dead text.
+        view.content = "";
+        view.textNode.data = "";
+        break;
       case "done":
         streamState.done = true;
+        if (view.reasoningSummary) {
+          view.reasoningSummary.textContent = "Thought before answering";
+        }
+        if (typeof payload.content === "string") {
+          if (payload.content.length > MAX_RESPONSE_CHARS) {
+            throw new Error("The model response exceeded the safe display limit.");
+          }
+          // The streamed text was a live preview. Replace it with the server's
+          // authoritative answer, which may include appended source URLs.
+          view.content = payload.content;
+          view.textNode.data = payload.content;
+        }
         if (typeof payload.model === "string" && payload.model) {
           const matchingModel = state.models.find((model) => model.id === payload.model);
           view.modelLabel.textContent = matchingModel?.name || boundedText(payload.model, 300);
@@ -778,7 +827,7 @@
     state.messages.push({ role: "user", content });
     let boundedRequest;
     try {
-      boundedRequest = buildBoundedRequest(state.messages, model.id);
+      boundedRequest = buildBoundedRequest(state.messages, model.id, state.reasoning);
     } catch (error) {
       state.messages.pop();
       showNotice(error instanceof Error ? error.message : "The message is too large to send safely.");
@@ -1076,6 +1125,17 @@
       void sendMessage();
     });
     elements.stopButton.addEventListener("click", stopGeneration);
+    elements.reasoningToggle.addEventListener("click", () => {
+      state.reasoning = !state.reasoning;
+      elements.reasoningToggle.setAttribute("aria-checked", state.reasoning ? "true" : "false");
+      elements.reasoningToggle.classList.toggle("is-on", state.reasoning);
+      // The cost is real, so say so rather than letting it feel like a hang.
+      setComposerHint(
+        state.reasoning
+          ? "Extended thinking on: the model reasons first, so the answer starts later."
+          : "",
+      );
+    });
     elements.newChatButton.addEventListener("click", newConversation);
     elements.sidebarToggle.addEventListener("click", openSidebar);
     elements.sidebarClose.addEventListener("click", () => closeSidebar(true));

@@ -52,20 +52,40 @@ if [[ -n "${CONTAINER_ENGINE:-}" ]] || [[ ! -f "${project_dir}/.runtime-engine" 
 fi
 chmod 600 "${project_dir}/.runtime-engine"
 
-if ! curl --fail --silent --max-time 3 http://127.0.0.1:11434/api/version >/dev/null; then
-  systemctl --user start ollama.service 2>/dev/null || true
-fi
-if ! curl --fail --silent --retry 20 --retry-delay 1 --retry-connrefused \
-  --max-time 3 http://127.0.0.1:11434/api/version >/dev/null; then
-  echo "Ollama is not responding on 127.0.0.1:11434." >&2
-  echo "Run: systemctl --user enable --now ollama.service" >&2
+data_volume="$(sed -n 's/^KEVINBELLM_DATA_VOLUME=//p' "${env_file}" | tail -n 1 | tr -d '\r')"
+data_volume="${data_volume:-kevinbellm-data}"
+[[ "${data_volume}" =~ ^[A-Za-z0-9_.-]+$ ]] || {
+  echo "KEVINBELLM_DATA_VOLUME contains unsupported characters." >&2
+  exit 1
+}
+legacy_volume='asus-kevin-bellm-data'
+if [[ "${data_volume}" != "${legacy_volume}" ]] && \
+   "${engine}" volume inspect "${legacy_volume}" >/dev/null 2>&1; then
+  if ! "${engine}" volume inspect "${data_volume}" >/dev/null 2>&1; then
+    cat >&2 <<EOF
+Found the proof-of-concept data volume ${legacy_volume}, but the configured
+volume is ${data_volume}. Refusing to create a new empty login database during
+an in-place upgrade. To retain the existing account, set this in .env:
+
+  KEVINBELLM_DATA_VOLUME=${legacy_volume}
+
+Fresh Machine A deployments without that legacy volume use kevinbellm-data.
+EOF
+    exit 1
+  fi
+  cat >&2 <<EOF
+Both ${legacy_volume} and ${data_volume} exist. Refusing to guess which account
+database is authoritative. Set KEVINBELLM_DATA_VOLUME=${legacy_volume} to keep
+using the proof-of-concept database, or explicitly archive/remove the legacy
+volume only after verifying a completed migration.
+EOF
   exit 1
 fi
 
 "${project_dir}/scripts/compose.sh" \
   -f "${project_dir}/compose.yaml" \
   --env-file "${env_file}" \
-  -p asus-kevin-bellm \
+  -p kevinbellm \
   config --quiet
 
 echo

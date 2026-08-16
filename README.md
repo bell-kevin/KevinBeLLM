@@ -1,186 +1,182 @@
-<a name="readme-top"></a>
-# kevinBeLLM
+# KevinBeLLM: private local AI
 
-https://bell-kevin.github.io/ASUS-KevinBeLLM/
+KevinBeLLM is an AGPL-licensed, self-hosted AI workspace served from owned
+Ubuntu hardware. This repository continues the original proof of concept at
+its existing public URL. The everyday architecture is deliberately simple:
 
-https://assistant.kevin-bell.com/
+```text
+Remote browser
+  -> Cloudflare Access
+  -> outbound-only Cloudflare Tunnel
+  -> Machine A: KevinBeLLM login + app + standalone llama-server
+                Qwen3.5-9B Q6_K fully on the RTX 3060 12 GiB
+```
 
-Licensed `AGPL-3.0-or-later`; see [LICENSE](LICENSE) and
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Third-party programs, model
-weights, hosted services, and data keep their own licenses.
+Machine B's RTX 3070 remains available for maintenance, experiments, or the
+explicitly optional 27B two-node profile. Normal service does not depend on
+Machine B and starts no llama.cpp RPC process, tunnel, or listener. The app and
+model API are not published directly to the LAN or Internet; SSH is the only
+LAN-facing administration service, and remote web traffic arrives through an
+outbound Cloudflare Tunnel.
 
-KevinBeLLM turns this ASUS laptop into a private, hardware-accelerated local AI
-assistant with a custom AGPL browser interface, selectable models, live
-web/news search, weather forecasts, and read-only Hugging Face model discovery.
+The public [GitHub Pages site](https://bell-kevin.github.io/KevinBeLLM/) is only a static project landing
+page. It has no login form, runtime probe, model-health indicator, analytics, or
+private configuration. Authorized users enter the actual assistant at
+<https://assistant.kevin-bell.com/>, first through Cloudflare Access and then
+through KevinBeLLM's own login.
 
-The default is `qwen3.6:35b-a3b-q4_K_M`, the best practical balance found for
-this laptop's 32 GB RAM, i7-4720HQ, and 3 GB GTX 970M. The custom application's
-model menu shows every model installed in Ollama and starts on that
-recommendation. The smaller `qwen3.5:9b-q4_K_M` is the faster preferred option.
+## Hardware and model
 
-## Use it
+| Role | GPU | Nominal VRAM | Workload |
+| --- | --- | ---: | --- |
+| Machine A, primary | NVIDIA GeForce RTX 3060 | 12 GiB | App and fully GPU-resident everyday model |
+| Machine B, optional | NVIDIA GeForce RTX 3070 | 8 GiB | Maintenance and deliberate two-node experiments |
 
-The stack is already installed on this laptop. Start it with:
+Both GPUs are Ampere devices with CUDA compute capability 8.6, so they use the
+same pinned llama.cpp source revision and CUDA build configuration. Their 20
+GiB of nominal VRAM remains two
+separate memory pools: bandwidth does not add together, and CUDA contexts,
+compute buffers, KV cache, and display use consume part of each card.
+
+The default model installer pins `Qwen_Qwen3.5-9B-Q6_K.gguf` at immutable
+revision `182be2fd6c7bc44887d88a91cb03ff009cc9f549`, verifies its exact
+7,958,818,848-byte size and SHA-256, and refuses mismatched files. On Machine A,
+the tuned MTP configuration sustains roughly 62-66 generation tokens/second
+across prompt lengths from 130 to 23,000 tokens, retains about 3.6 GiB of free
+VRAM at a 32,768-token context, and passes a coherent OpenAI-compatible
+tool-call check. Time to first token is about 0.3 s for a short prompt and
+scales with prompt length at a prefill rate of roughly 1,350 tokens/second.
+Results are local measurements, not a guarantee for other systems.
+
+The optional pinned 27B Q4_K_M artifact is retained for comparison. It needs
+CPU offload on A alone and measured only about 1.42 tokens/second with the
+conservative build, so it is not the interactive default. The existing
+two-machine profile can distribute it across both GPUs only after the operator
+accepts the separate RPC security warning.
+
+## Cold boots and remote availability
+
+Both hosts use full-disk encryption. After power loss or shutdown, someone must
+physically power on a required machine and enter its LUKS passphrase; Wake-on-LAN
+and SSH cannot bypass that pre-boot step. Everyday service needs only Machine A.
+Once A is unlocked, enabled user services can restore inference, the app, and
+the outbound connector without a graphical login. Machine B needs physical
+unlock only when its optional services are intentionally used.
+
+This repository intentionally does not publish current uptime, unlock state,
+model availability, internal addresses, or service health.
+
+## Deployment and administration
+
+Follow [the cluster helper guide](infra/cluster/README.md) for the safe
+standalone installation. It covers:
+
+- physical inventory and encrypted-boot behavior;
+- stable router DHCP reservations without public port forwarding;
+- fingerprint-verified, key-only SSH from Windows;
+- the pinned llama.cpp source and CUDA configuration;
+- the standalone Machine A systemd user service;
+- checksum-verified model installation;
+- KevinBeLLM startup, validation, benchmarking, and rollback;
+- an outbound Cloudflare Tunnel protected by Cloudflare Access.
+
+The much longer [two-node setup guide](docs/TWO_NODE_SETUP.md) is retained for
+the optional 27B RPC experiment; it is not required for normal operation.
+
+The checked-in cluster helpers and ignored private environment files are
+documented in [infra/cluster/README.md](infra/cluster/README.md).
+
+For private LAN maintenance from the Windows administration laptop:
+
+```powershell
+ssh kevinbellm-a
+ssh kevinbellm-b
+```
+
+To open a laptop-local UI tunnel without publishing a LAN port:
+
+```powershell
+.\scripts\windows\Open-KevinBeLLMForward.ps1
+```
+
+Then visit <http://127.0.0.1:3000>. Direct forwarding of the llama API is
+available only as an explicit diagnostics option:
+
+```powershell
+.\scripts\windows\Open-KevinBeLLMForward.ps1 -ForwardLlamaApi
+```
+
+On Machine A, the application lifecycle remains:
 
 ```bash
 ./scripts/start.sh
-./scripts/show-login.sh
+./scripts/status.sh
+./scripts/doctor.sh
+./scripts/stop.sh
 ```
 
-Open <http://127.0.0.1:3000>, sign in, and choose a model from the selector at
-the top of a new chat. The large default can take several minutes to load on
-first use. Only one model stays loaded at a time to avoid exhausting RAM.
+For an in-place upgrade of the old proof of concept, stop its old Compose
+projects first. To retain its account database, set
+`KEVINBELLM_DATA_VOLUME=asus-kevin-bellm-data` in the private root `.env`.
+Fresh Machine A deployments use the hardware-neutral `kevinbellm-data` volume;
+`setup.sh` refuses the common silent-empty-database migration mistake.
 
-Useful commands:
+The deployed application uses the local llama.cpp OpenAI-compatible endpoint:
 
-```bash
-./scripts/status.sh       # service state and installed model IDs
-./scripts/doctor.sh       # live search/weather/HF/UI checks
-./scripts/stop.sh         # stop UI, tools, tunnel, and search
-./scripts/install-autostart.sh  # start automatically after desktop login
+```dotenv
+INFERENCE_BACKEND=llamacpp
+INFERENCE_BASE_URL=http://127.0.0.1:8080
+DEFAULT_MODEL=kevinbellm-9b
+PREFERRED_MODELS=kevinbellm-9b,kevinbellm-27b
 ```
 
-After the protected tunnel is configured, use
-`./scripts/install-autostart.sh remote` instead to autostart both the local
-stack and authenticated remote connector. The default `local` mode never
-starts a tunnel.
+The inference address is required to remain on loopback.
 
-The generated `.env` contains the one-time credentials used by the explicit
-initial-account bootstrap. It is mode `0600` and excluded from git. Change the
-initial password in KevinBeLLM after signing in. Public account signup does not
-exist. The normal application startup path will not create an administrator;
-it fails closed when the account database is empty. Session cookies contain
-random opaque tokens; only their SHA-256 digests are stored in the database.
+## Optional RPC security boundary
 
-## What runs where
+The standalone default has no RPC process, dependency, command-line argument,
+or listener and does not require a risk acknowledgment. If the optional
+two-node profile is selected, do not skip its warning: llama.cpp describes its
+RPC backend as experimental and insecure, and the backend has had critical
+unauthenticated code-execution vulnerabilities. That profile therefore:
 
-```text
-Browser (login + model picker)
-        |
-        v
-KevinBeLLM web app on 127.0.0.1:3000
-   |             |                 |
-   v             v                 v
-Ollama       SearXNG          Live-data tools
-127.0.0.1    127.0.0.1        127.0.0.1
-GPU/CPU      web + news       Open-Meteo + HF Hub
-```
+- binds the worker to `127.0.0.1:50052`;
+- binds Machine A's forwarded endpoint to `127.0.0.1:50053`;
+- carries RPC traffic through a source-restricted, command-restricted SSH key;
+- blocks the RPC port in both host firewalls; and
+- refuses to start RPC until the operator explicitly acknowledges the risk.
 
-- Ollama runs natively so it can use the GTX 970M CUDA backend. Its API is
-  loopback-only.
-- The custom FastAPI/vanilla-JS web app is AGPL-3.0-or-later. It stores only
-  Argon2 password hashes and hashed sessions in a named container volume; chat
-  history stays in the current browser tab.
-- SearXNG is self-hosted and provides JSON search results. It is also
-  loopback-only.
-- The custom tool service is read-only, non-root, has all Linux capabilities
-  dropped, and can neither execute code nor install models.
-- Search pages are untrusted evidence. The assistant is configured for native
-  tool calling and a 16K working context, not unlimited host access.
+These controls reduce exposure; they do not make an unsafe RPC implementation
+trusted. Never expose either RPC port to the LAN, a Cloudflare route, or a
+router port forward. See [SECURITY.md](SECURITY.md) for reporting and deployment
+guidance.
 
-## Remote access and GitHub Pages
+## Project layout
 
-GitHub Pages cannot run the model, hold a private password, or securely proxy
-requests to a laptop: it only serves static public files. The safe layout is:
+- `services/assistant-web/` — authenticated FastAPI assistant with a llama.cpp
+  OpenAI-compatible backend adapter.
+- `scripts/cluster/` — Ubuntu preparation, SSH hardening, pinned builds, model
+  download, tunnel setup, service installation, and status checks.
+- `systemd/cluster/` — hardened standalone, optional worker, tunnel, and
+  coordinator templates.
+- `scripts/windows/` — administration-laptop SSH setup and private forwarding.
+- `infra/cluster/` — non-secret examples; active environment files are ignored.
+- `docs/` — source for the static
+  [GitHub Pages landing site](https://bell-kevin.github.io/KevinBeLLM/) and the
+  authoritative deployment guide.
 
-```text
-public GitHub Pages launch page
-             |
-             v
-Cloudflare Access authentication
-             |
-             v
-named Cloudflare Tunnel -> KevinBeLLM login -> local Ollama
-```
+KevinBeLLM retains Argon2 password hashing, hashed sessions, CSRF and origin
+checks, a bounded tool loop, SearXNG integration, live-data tools, and a
+rootless-container layout. Cloudflare Access supplements this application
+login; it does not replace it.
 
-The `docs/` folder is safe to publish as a Pages site. Follow
-[`infra/cloudflare/README.md`](infra/cloudflare/README.md) to create the named
-tunnel and Access policy. Remote activation still requires an owner-controlled
-domain, a Cloudflare Access identity policy, and a local tunnel credential.
-Only then use `./scripts/start-remote.sh`. This script refuses to start if the
-URL is not HTTPS or the secret tunnel token is missing.
+## License and public source
 
-Before advertising the public endpoint, publish this repository and make
-`SOURCE_URL` point to the matching public source. Replace the Pages launch-link
-placeholder only after the protected assistant hostname has passed the access
-checks in the Cloudflare guide. The Pages repository contains neither the
-application password nor a browser-side substitute for server authentication.
+The project is licensed `AGPL-3.0-or-later`; see [LICENSE](LICENSE) and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Models, llama.cpp, Cloudflare,
+and other dependencies retain their own licenses and terms.
 
-Never commit `.env`, a tunnel token, model blobs, the KevinBeLLM data volume, or
-chat exports. Do not use an unauthenticated "quick tunnel" for this service.
-
-## Fresh installation
-
-On a compatible Ubuntu host with rootless Podman (preferred) or Docker and the
-user-local Ollama service:
-
-```bash
-./scripts/setup.sh
-/home/$USER/.local/bin/ollama pull qwen3.6:35b-a3b-q4_K_M
-/home/$USER/.local/bin/ollama pull qwen3.5:9b-q4_K_M
-./scripts/start.sh
-```
-
-Ollama tags are mutable. The artifacts reviewed and benchmarked for this host
-had these exact manifest digests; verify them after pulling:
-
-```text
-qwen3.6:35b-a3b-q4_K_M  07d35212591fc27746f0a317c975a6d68754fb38e9053d82e25f06057af28522
-qwen3.5:9b-q4_K_M       6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7
-```
-
-Run `ollama list` and `curl -s http://127.0.0.1:11434/api/tags | jq` to
-compare the local manifests. Review the upstream license again whenever a tag
-resolves to a different digest.
-
-With Podman, install `podman-compose` 1.4.1 or newer separately from Ubuntu
-24.04's outdated 1.0.6 package, then run
-`./scripts/select-container-engine.sh podman`. The script refuses older versions
-because they do not enforce healthy dependency ordering. On this laptop Docker
-is the current runtime fallback because installing the Podman system packages
-requires an administrator password; the same Compose projects include reviewed
-rootless-Podman user-namespace overrides.
-
-Configuration is in [`compose.yaml`](compose.yaml), the search service under
-[`infra/search`](infra/search/README.md), and the OpenAPI service under
-[`services/live-tools`](services/live-tools/README.md).
-
-Container builds install hash-locked direct and transitive Python dependencies.
-The assistant image is digest-pinned to Python 3.13.15 slim Bookworm and the
-live-tools image to Python 3.12.13 slim Bookworm. The latter first upgrades to
-the integrity-pinned pip 26.2.1 wheel before installing its application lock.
-Maintainers can deliberately refresh the locks with
-`./scripts/update-locks.sh`, then must rerun the security scan and test suite
-before committing them.
-
-KevinBeLLM stores its Argon2-hashed account and hashed login sessions in the
-`asus-kevin-bellm-data` volume. Deleting that volume erases the account database;
-chat transcripts are not stored server-side by this application. An empty
-database is not silently repopulated from stale bootstrap credentials. If you
-intentionally delete the data volume, choose a fresh `ADMIN_PASSWORD` in the
-private `.env`, delete the ignored empty `.bootstrap-complete` marker, and run
-`./scripts/start.sh`; that explicitly performs the one-shot bootstrap again.
-
-## Measured model behavior on this laptop
-
-Both preferred choices are installed and were exercised against the local
-Ollama runtime. These are one-run, very-short-output measurements rather than
-promises for a long conversation; prompt length, context use, and GPU offload
-will change the observed rate.
-
-| Model | Role | Measured behavior |
-|---|---|---|
-| `qwen3.6:35b-a3b-q4_K_M` | recommended default | first cold load: 174.97 s; warmed, thinking-disabled three-token check: 3.144 s total and 9.687 output tokens/s; native weather-tool call: 6.334 output tokens/s |
-| `qwen3.5:9b-q4_K_M` | smaller fallback | cold load: 34.25 s; three-token check: 38.25 s total and 5.243 output tokens/s |
-
-The stack uses a 16K working context and keeps one model loaded at a time.
-Browser requests disable the Qwen thinking mode so a small response budget is
-not consumed solely by hidden reasoning. Training a new foundation model is
-unnecessary for current facts: the read-only internet tools supply those at
-request time; fine-tuning would instead change behavior or style.
-
-https://bell-kevin.github.io/ASUS-KevinBeLLM/
-
-https://assistant.kevin-bell.com/
-
-<p align="left"><a href="#readme-top">back to top</a></p>
+When the modified application is offered over a network, publish the
+corresponding source and set `SOURCE_URL` to this exact public repository.
+Never commit private environment files, passwords, SSH keys, Cloudflare tunnel
+credentials, model files, account databases, logs, or chat exports.

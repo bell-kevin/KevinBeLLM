@@ -1,0 +1,10 @@
+# Private inventory and role environment files
+*.env
+!*.example.env
+
+# Trust databases and private/service keys must stay outside Git
+known_hosts*
+id_*
+*.key
+*.pem
+*.part

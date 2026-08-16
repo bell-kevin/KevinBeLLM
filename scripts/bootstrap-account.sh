@@ -25,15 +25,18 @@ if [[ -z "${admin_name}" || -z "${admin_email}" || ${#admin_password} -lt 14 ]];
   exit 1
 fi
 
-export ADMIN_NAME="${admin_name}" ADMIN_EMAIL="${admin_email}" ADMIN_PASSWORD="${admin_password}"
+# Feed the three values over the one-shot container's stdin. This keeps them
+# out of argv, Compose output, and the long-running service environment while
+# also avoiding podman-compose 1.6's broken Docker-compatible `-e NAME` path.
+bootstrap_code='import os,runpy,sys; values=sys.stdin.buffer.read().split(b"\0"); assert len(values)==4 and values[-1]==b""; os.environ.update(dict(zip(("ADMIN_NAME","ADMIN_EMAIL","ADMIN_PASSWORD"),(value.decode("utf-8") for value in values[:3])))); runpy.run_module("app.bootstrap",run_name="__main__")'
+printf '%s\0%s\0%s\0' "${admin_name}" "${admin_email}" "${admin_password}" |
 "${project_dir}/scripts/compose.sh" \
   -f "${project_dir}/compose.yaml" \
   --env-file "${env_file}" \
-  -p asus-kevin-bellm \
-  run --rm --no-deps \
-  -e ADMIN_NAME -e ADMIN_EMAIL -e ADMIN_PASSWORD \
-  assistant-web python -m app.bootstrap
-unset ADMIN_NAME ADMIN_EMAIL ADMIN_PASSWORD admin_name admin_email admin_password
+  -p kevinbellm \
+  run --rm --no-deps -T \
+  assistant-web python -c "${bootstrap_code}"
+unset admin_name admin_email admin_password bootstrap_code
 
 : > "${marker_file}"
 chmod 600 "${marker_file}"

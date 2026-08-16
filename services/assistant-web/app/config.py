@@ -10,6 +10,9 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 
+INFERENCE_BACKENDS = frozenset({"ollama", "llamacpp"})
+
+
 def _bounded_int(name: str, default: int, minimum: int, maximum: int) -> int:
     raw = os.getenv(name, str(default))
     try:
@@ -31,6 +34,37 @@ def _http_url(name: str, default: str, *, loopback_only: bool = False) -> str:
     if loopback_only and parsed.hostname.lower() not in {"localhost", "127.0.0.1", "::1"}:
         raise RuntimeError(f"{name} must use a loopback host")
     return value
+
+
+def _inference_backend() -> str:
+    configured = os.getenv("INFERENCE_BACKEND")
+    if configured is not None:
+        backend = configured.strip().lower()
+    elif "OLLAMA_URL" in os.environ or "OLLAMA_BASE_URL" in os.environ:
+        # Preserve legacy deployments that predate INFERENCE_BACKEND.
+        backend = "ollama"
+    else:
+        backend = "llamacpp"
+    if backend not in INFERENCE_BACKENDS:
+        choices = " or ".join(sorted(INFERENCE_BACKENDS))
+        raise RuntimeError(f"INFERENCE_BACKEND must be {choices}")
+    return backend
+
+
+def _inference_url(backend: str) -> str:
+    default = (
+        "http://127.0.0.1:11434"
+        if backend == "ollama"
+        else "http://127.0.0.1:8080"
+    )
+    # OLLAMA_URL and OLLAMA_BASE_URL remain supported when the new generic
+    # setting is absent so existing deployments do not need a flag day.
+    if backend == "ollama":
+        if "OLLAMA_URL" in os.environ:
+            default = os.environ["OLLAMA_URL"]
+        elif "OLLAMA_BASE_URL" in os.environ:
+            default = os.environ["OLLAMA_BASE_URL"]
+    return _http_url("INFERENCE_BASE_URL", default, loopback_only=True)
 
 
 def _preferred_models() -> tuple[str, ...]:
@@ -81,13 +115,23 @@ class Settings:
     fetch_deadline_seconds: int
     database_concurrency: int
     ollama_context_length: int
+    # Defaults keep keyword construction by older callers source-compatible.
+    inference_backend: str = "llamacpp"
+    inference_base_url: str | None = None
 
 
 def load_settings() -> Settings:
     public_url = _http_url("PUBLIC_URL", "http://localhost:3000")
     parsed_public = urlsplit(public_url)
     public_origin = f"{parsed_public.scheme}://{parsed_public.netloc}".lower()
-    default_model = os.getenv("DEFAULT_MODEL", "qwen3.6:35b-a3b-q4_K_M").strip()
+    inference_backend = _inference_backend()
+    inference_base_url = _inference_url(inference_backend)
+    model_default = (
+        "qwen3.6:35b-a3b-q4_K_M"
+        if inference_backend == "ollama"
+        else "kevinbellm-9b"
+    )
+    default_model = os.getenv("DEFAULT_MODEL", model_default).strip()
     if not default_model or len(default_model) > 200:
         raise RuntimeError("DEFAULT_MODEL must be between 1 and 200 characters")
     return Settings(
@@ -96,13 +140,10 @@ def load_settings() -> Settings:
         public_origin=public_origin,
         secure_cookie=parsed_public.scheme == "https",
         source_url=_http_url(
-            "SOURCE_URL", "https://github.com/bell-kevin/ASUS-KevinBeLLM"
+            "SOURCE_URL", "https://github.com/bell-kevin/KevinBeLLM"
         ),
-        ollama_url=_http_url(
-            "OLLAMA_URL",
-            os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
-            loopback_only=True,
-        ),
+        # Keep this alias populated for older code that still reads ollama_url.
+        ollama_url=inference_base_url,
         searxng_url=_http_url(
             "SEARXNG_URL", "http://127.0.0.1:8888", loopback_only=True
         ),
@@ -114,7 +155,7 @@ def load_settings() -> Settings:
         session_ttl_seconds=_bounded_int("SESSION_TTL_HOURS", 24, 1, 24 * 30) * 3600,
         fetch_max_bytes=_bounded_int("FETCH_MAX_BYTES", 262_144, 65_536, 1_048_576),
         tool_result_max_chars=_bounded_int("TOOL_RESULT_MAX_CHARS", 12_000, 2_000, 30_000),
-        chat_concurrency=_bounded_int("CHAT_CONCURRENCY", 2, 1, 8),
+        chat_concurrency=_bounded_int("CHAT_CONCURRENCY", 1, 1, 8),
         chat_pending=_bounded_int("CHAT_PENDING", 2, 0, 16),
         chat_queue_timeout_seconds=_bounded_int("CHAT_QUEUE_TIMEOUT_SECONDS", 30, 1, 120),
         chat_deadline_seconds=_bounded_int("CHAT_DEADLINE_SECONDS", 1_200, 60, 3_600),
@@ -123,6 +164,8 @@ def load_settings() -> Settings:
         ollama_context_length=_bounded_int(
             "OLLAMA_CONTEXT_LENGTH", 16_384, 2_048, 131_072
         ),
+        inference_backend=inference_backend,
+        inference_base_url=inference_base_url,
     )
 
 

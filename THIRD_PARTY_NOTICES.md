@@ -5,18 +5,25 @@ repository are licensed under `AGPL-3.0-or-later`. The following independent
 programs, model weights, data, and hosted services retain their own terms. They
 are not relicensed by this repository.
 
+The table inventories the standalone default and optional two-node deployment.
+The application retains an explicit legacy Ollama API adapter, but this
+repository neither installs nor pins an Ollama runtime or Ollama-hosted model
+artifact for the new deployment.
+
 ## Software and model components
 
 | Component | Pinned/recommended version | Upstream license | Source |
 |---|---|---|---|
-| Ollama | 0.32.9 | MIT | <https://github.com/ollama/ollama/tree/v0.32.9> |
-| Qwen3.6 35B-A3B weights | official base, Q4_K_M packaging | Apache-2.0 | <https://huggingface.co/Qwen/Qwen3.6-35B-A3B> |
-| Qwen3.5 9B weights | official base, Q4_K_M packaging | Apache-2.0 | <https://huggingface.co/Qwen/Qwen3.5-9B> |
+| llama.cpp | `b10451` | MIT | <https://github.com/ggml-org/llama.cpp/tree/b10451> |
+| Qwen3.5 9B weights | official revision `c202236235762e1c871ad0ccb60c8ee5ba337b9a` | Apache-2.0 | <https://huggingface.co/Qwen/Qwen3.5-9B/tree/c202236235762e1c871ad0ccb60c8ee5ba337b9a> |
+| Qwen3.5 9B Q6_K GGUF | `bartowski/Qwen_Qwen3.5-9B-GGUF` revision `182be2fd6c7bc44887d88a91cb03ff009cc9f549` | Apache-2.0 | <https://huggingface.co/bartowski/Qwen_Qwen3.5-9B-GGUF/tree/182be2fd6c7bc44887d88a91cb03ff009cc9f549> |
+| Qwen3.5 27B weights | official base | Apache-2.0 | <https://huggingface.co/Qwen/Qwen3.5-27B> |
+| Qwen3.5 27B Q4_K_M GGUF | `bartowski/Qwen_Qwen3.5-27B-GGUF` revision `d7b113c40283f4d99f4eb0ec20d126ad653cc736` | Apache-2.0 | <https://huggingface.co/bartowski/Qwen_Qwen3.5-27B-GGUF/tree/d7b113c40283f4d99f4eb0ec20d126ad653cc736> |
 | SearXNG | commit `c01178d03` | AGPL-3.0-or-later | <https://github.com/searxng/searxng/tree/c01178d03> |
 | hyper-h2 | 4.4.1 security overlay | MIT | <https://github.com/python-hyper/h2/tree/v4.4.1> |
 | cloudflared client | 2026.7.3 | Apache-2.0 | <https://github.com/cloudflare/cloudflared/tree/2026.7.3> |
 | Podman | Ubuntu 24.04 package 4.9.3 | Apache-2.0 | <https://github.com/containers/podman> |
-| podman-compose | 1.4.1 or newer | GPL-2.0-only | <https://github.com/containers/podman-compose> |
+| podman-compose | 1.6.0 (1.4.1 minimum) | GPL-2.0-only | <https://github.com/containers/podman-compose> |
 | Python | 3.13.15 (assistant), 3.12.13 (tools) | PSF-2.0 | <https://www.python.org/> |
 | pip | 26.2.1 (live-tools build bootstrap) | MIT | <https://github.com/pypa/pip/tree/26.2.1> |
 | FastAPI | 0.141.1 | MIT | <https://github.com/fastapi/fastapi> |
@@ -32,18 +39,28 @@ packages are pinned with distribution hashes in the checked-in lock files; the
 lock files are the authoritative inventory of installed Python package
 versions. Each dependency retains its upstream license.
 
-The locally reviewed Ollama manifests were
-`07d35212591fc27746f0a317c975a6d68754fb38e9053d82e25f06057af28522`
-for Qwen3.6 and
-`6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7`
-for Qwen3.5. Ollama registry tags are mutable; verify both manifest digest and
-license metadata after pulling or before redistributing an artifact.
+The everyday GGUF is `Qwen_Qwen3.5-9B-Q6_K.gguf`, exactly 7,958,818,848 bytes
+with SHA-256
+`073a9275e65d9c8cd2819cf5f77b99fbaa6e87ba591da6bbaa86ec073a64bfef`.
+The optional two-node GGUF is `Qwen_Qwen3.5-27B-Q4_K_M.gguf`, exactly
+17,984,872,928 bytes with SHA-256
+`81657841d62f1821c748d0fea6c260b7d3508844fe4e9250253ef81c4e4d9edf`.
+The download helper pins both immutable repository revisions and refuses
+artifacts that do not match both their byte count and digest.
 
-The model repository metadata and exact Ollama manifest should be checked again
+The model repository metadata and exact GGUF artifact should be checked again
 before redistributing model blobs. Every model discovered through Hugging Face
 has its own license; a repository being public or downloadable does not make it
 FLOSS. Missing, custom, research-only, or noncommercial model licenses require
 separate review.
+
+The default standalone service does not start or connect to RPC. The optional
+two-node path builds llama.cpp with its experimental RPC backend. Upstream calls
+that backend insecure, and the pinned release is not represented here as a
+security fix for `CVE-2026-34159`. See `SECURITY.md` and recheck upstream
+advisories before every pin change. A separately packaged GGUF retains both the
+base model's license and any applicable packaging terms; record the exact
+repository, filename, size, and SHA-256 digest used by a real deployment.
 
 ## Hosted service and data boundaries
 
@@ -67,13 +84,12 @@ separate review.
 
 The August 12, 2026 release audit found no known advisories in either custom
 Python application's locked dependency set. The official SearXNG image's
-`h2` 4.4.0 finding is locally overlaid with fixed 4.4.1. Current official
-Ollama and cloudflared builds still embed some scanner-flagged Go modules for
-image/SSH or hostile HTTP/3 peer/server paths that this text-only, loopback
-Ollama and client-only Cloudflare topology does not expose. No newer official
-release was available during the audit. These are accepted low-reach upstream
-risks, not a claim of zero vulnerabilities; monitor and update the exact
-upstream pins when fixes are published.
+`h2` 4.4.0 finding is locally overlaid with fixed 4.4.1. The cloudflared build
+still embeds some scanner-flagged Go modules for hostile
+HTTP/3 peer/server paths that this client-only Cloudflare topology does not
+expose. No newer official release was available during the audit. These are
+accepted low-reach upstream risks, not a claim of zero vulnerabilities;
+monitor and update the exact upstream pins when fixes are published.
 
 The stack deliberately does not use Open WebUI v0.11.0 in its final design.
 That release's branding-restricted license is source-available but not cleanly

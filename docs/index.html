@@ -8,15 +8,15 @@
     <meta name="theme-color" content="#07110f">
     <meta
       name="description"
-      content="KevinBeLLM is a local-first AI workspace with selectable models and controlled access to live web tools."
+      content="KevinBeLLM is a private, owner-operated AI workspace with local GPU inference and layered authentication for remote access."
     >
-    <meta property="og:title" content="KevinBeLLM — local intelligence, current context">
+    <meta property="og:title" content="KevinBeLLM — private AI on owned hardware">
     <meta
       property="og:description"
-      content="A private AI workspace running on personal hardware, with controlled tools for live information."
+      content="An open-source AI workspace with a fast standalone local model and protected remote access."
     >
     <meta property="og:type" content="website">
-    <title>KevinBeLLM — local intelligence, current context</title>
+    <title>KevinBeLLM — private AI on owned hardware</title>
     <link rel="icon" href="assets/mark.svg" type="image/svg+xml">
     <link rel="stylesheet" href="assets/styles.css">
   </head>
@@ -32,7 +32,7 @@
           <span>KevinBeLLM</span>
         </a>
         <nav aria-label="Primary navigation">
-          <a href="#capabilities">Capabilities</a>
+          <a href="#hardware">Hardware</a>
           <a href="#architecture">Architecture</a>
           <a href="#boundaries">Privacy</a>
           <a class="nav-launch" href="https://assistant.kevin-bell.com/">Open assistant</a>
@@ -43,27 +43,28 @@
     <main id="main-content">
       <section class="hero" aria-labelledby="hero-title">
         <div class="hero-copy">
-          <p class="eyebrow"><span aria-hidden="true"></span> Runs on personal hardware</p>
-          <h1 id="hero-title">Local intelligence.<br><em>Current context.</em></h1>
+          <p class="eyebrow"><span aria-hidden="true"></span> Owner-operated, fully local inference</p>
+          <h1 id="hero-title">Private AI.<br><em>Protected remote access.</em></h1>
           <p class="hero-summary">
-            A private AI workspace that keeps model inference close, lets you choose the
-            model for each conversation, and reaches the live web only through controlled tools.
+            KevinBeLLM is an open-source AI workspace served from encrypted Ubuntu
+            hardware. Its everyday model runs fully on an RTX 3060, and authorized
+            users can connect without opening a router port.
           </p>
           <div class="hero-actions">
             <a class="button button-primary" href="https://assistant.kevin-bell.com/">
               Open the private assistant
               <span aria-hidden="true">↗</span>
             </a>
-            <a class="button button-secondary" href="#architecture">See how it works</a>
+            <a class="button button-secondary" href="#architecture">See the request path</a>
           </div>
           <p class="access-note">
             <span class="lock" aria-hidden="true"></span>
-            The assistant is separate from this public page. Cloudflare Access asks authorized
-            users to sign in before the KevinBeLLM login is reachable.
+            This public GitHub Pages site is informational only. Cloudflare Access verifies
+            an authorized identity before KevinBeLLM presents its separate application login.
           </p>
         </div>
 
-        <aside class="workspace-preview" aria-label="Illustration of the assistant workspace">
+        <aside class="workspace-preview" aria-label="Illustration of the private assistant workspace">
           <div class="window-bar" aria-hidden="true">
             <span></span><span></span><span></span>
             <p>private workspace</p>
@@ -71,27 +72,26 @@
           <div class="preview-body">
             <div class="model-row">
               <div>
-                <span class="field-label">Active model</span>
-                <strong>Qwen local</strong>
+                <span class="field-label">Pinned model</span>
+                <strong>Qwen3.5-9B Q6_K</strong>
               </div>
-              <span class="selector" aria-hidden="true">Change <b>⌄</b></span>
+              <span class="selector" aria-hidden="true">Format <b>GGUF</b></span>
             </div>
             <div class="conversation">
               <div class="avatar" aria-hidden="true">K</div>
               <div class="message">
-                <p class="message-label">Assistant</p>
-                <p>I can reason locally, then search when the answer depends on what changed today.</p>
-                <div class="tool-pills" aria-label="Available live tools">
-                  <span>Web</span>
-                  <span>News</span>
-                  <span>Weather</span>
-                  <span>Model discovery</span>
+                <p class="message-label">Fast standalone inference</p>
+                <p>Machine A keeps the everyday model fully on its GPU; Machine B is not required for normal service.</p>
+                <div class="tool-pills" aria-label="Deployment components">
+                  <span>RTX 3060 · 12 GiB</span>
+                  <span>≈54 tokens/s measured</span>
+                  <span>llama.cpp</span>
                 </div>
               </div>
             </div>
             <div class="prompt-box" aria-hidden="true">
-              <span>Ask anything…</span>
-              <b>↑</b>
+              <span>Authenticated workspace</span>
+              <b>→</b>
             </div>
           </div>
         </aside>
@@ -99,39 +99,81 @@
 
       <section class="capabilities section" id="capabilities" aria-labelledby="capabilities-title">
         <div class="section-heading">
-          <p class="kicker">Built for useful independence</p>
-          <h2 id="capabilities-title">Private by default, connected on purpose.</h2>
-          <p>The model, interface, and retrieval services live together on the laptop.</p>
+          <p class="kicker">Useful independence</p>
+          <h2 id="capabilities-title">Local by design, connected on purpose.</h2>
+          <p>The model and interface run on owned hardware; selected tools and authenticated remote access cross that boundary deliberately.</p>
         </div>
         <div class="feature-grid">
           <article>
             <span class="feature-number">01</span>
-            <h3>Local-first inference</h3>
-            <p>Prompts are answered by models running on owned hardware instead of a required hosted model API.</p>
+            <h3>Local GPU inference</h3>
+            <p>A checksum-pinned 9B quantized model stays on the RTX 3060 instead of relying on a hosted model API.</p>
           </article>
           <article>
             <span class="feature-number">02</span>
-            <h3>Model choice</h3>
-            <p>Switch between installed models in the browser, with a strong default ready for everyday use.</p>
+            <h3>Controlled live context</h3>
+            <p>Bounded tools can retrieve web, news, weather, and model information when an answer depends on fresh data.</p>
           </article>
           <article>
             <span class="feature-number">03</span>
-            <h3>Live, cited context</h3>
-            <p>Purpose-built tools can retrieve web, news, weather, and model information when freshness matters.</p>
+            <h3>Two authentication gates</h3>
+            <p>Cloudflare Access protects the tunnel route, and KevinBeLLM still requires its own login at the origin.</p>
           </article>
           <article>
             <span class="feature-number">04</span>
-            <h3>Layered access</h3>
-            <p>An outbound-only tunnel and identity policy protect remote access, alongside KevinBeLLM authentication.</p>
+            <h3>Public, auditable source</h3>
+            <p>The application and deployment automation are published under the AGPL without publishing credentials or private data.</p>
           </article>
+        </div>
+      </section>
+
+      <section class="hardware section" id="hardware" aria-labelledby="hardware-title">
+        <div class="section-heading compact">
+          <p class="kicker">Owned compute</p>
+          <h2 id="hardware-title">One primary host. One optional GPU.</h2>
+          <p>The responsive default needs only Machine A; Machine B remains available for deliberate experiments.</p>
+        </div>
+
+        <div class="host-grid">
+          <article class="host-card">
+            <p class="host-label">Machine A · primary</p>
+            <h3>GeForce RTX 3060</h3>
+            <dl>
+              <div><dt>VRAM</dt><dd>12 GiB GDDR6</dd></div>
+              <div><dt>Role</dt><dd>App and fully resident 9B model</dd></div>
+              <div><dt>Network</dt><dd>Outbound tunnel; loopback origins</dd></div>
+            </dl>
+          </article>
+          <article class="host-card">
+            <p class="host-label">Machine B · optional</p>
+            <h3>GeForce RTX 3070</h3>
+            <dl>
+              <div><dt>VRAM</dt><dd>8 GiB GDDR6</dd></div>
+              <div><dt>Role</dt><dd>Maintenance and capacity tests</dd></div>
+              <div><dt>Default state</dt><dd>No inference dependency</dd></div>
+            </dl>
+          </article>
+        </div>
+
+        <p class="pool-note">
+          <strong>Speed and capacity are different goals.</strong>
+          The fully GPU-resident 9B default is far faster than spilling the retained 27B model into system RAM.
+        </p>
+
+        <div class="boot-note">
+          <span class="boot-icon" aria-hidden="true">⌁</span>
+          <div>
+            <strong>Encrypted cold boots require a person.</strong>
+            <p>After shutdown or power loss, Machine A must be physically powered on and have its LUKS passphrase entered. Machine B needs an unlock only when intentionally used; no remote feature bypasses either prompt.</p>
+          </div>
         </div>
       </section>
 
       <section class="architecture section" id="architecture" aria-labelledby="architecture-title">
         <div class="section-heading compact">
-          <p class="kicker">Request path</p>
-          <h2 id="architecture-title">No router port-forwarding required.</h2>
-          <p>Remote traffic follows an authenticated path; local use stays on the laptop.</p>
+          <p class="kicker">Remote request path</p>
+          <h2 id="architecture-title">No public origin port required.</h2>
+          <p>Remote requests pass through two login boundaries before the local application can reach the model.</p>
         </div>
         <ol class="flow" aria-label="Remote request architecture">
           <li>
@@ -148,11 +190,15 @@
           </li>
           <li>
             <span class="flow-icon" aria-hidden="true">04</span>
-            <div><strong>KevinBeLLM</strong><small>AGPL app + local models</small></div>
+            <div><strong>KevinBeLLM login</strong><small>Machine A origin</small></div>
+          </li>
+          <li>
+            <span class="flow-icon" aria-hidden="true">05</span>
+            <div><strong>Local llama.cpp</strong><small>RTX 3060 · Qwen3.5-9B</small></div>
           </li>
         </ol>
         <p class="flow-caption">
-          The public landing page contains no login form, tunnel credential, model endpoint, or live system status.
+          GitHub Pages is not part of this request path. The public page contains no login form, origin address, tunnel credential, model endpoint, uptime badge, or live system status.
         </p>
       </section>
 
@@ -164,13 +210,13 @@
           </div>
           <div class="boundary-copy">
             <p>
-              Model inference can remain local, but an intentional web search sends the search query
-              to configured providers and downloads selected pages. Remote access also passes through
-              Cloudflare before reaching the laptop.
+              Model inference can remain on owned hardware, but an intentional web search
+              sends the search query to configured providers and downloads selected pages.
+              Remote access also passes through Cloudflare before reaching Machine A.
             </p>
             <p>
-              Treat model output as a starting point: verify important medical, legal, financial,
-              security, and operational decisions against primary sources.
+              Treat model output as a starting point. Verify important medical, legal,
+              financial, security, and operational decisions against primary sources.
             </p>
           </div>
         </div>
@@ -178,8 +224,8 @@
 
       <section class="final-cta section" aria-labelledby="cta-title">
         <p class="kicker">Authorized users</p>
-        <h2 id="cta-title">Enter the private workspace.</h2>
-        <p>Cloudflare Access will handle identity verification on the assistant hostname.</p>
+        <h2 id="cta-title">Enter the protected workspace.</h2>
+        <p>Continue to Cloudflare Access. KevinBeLLM will request its own login after the identity policy succeeds.</p>
         <a class="button button-primary" href="https://assistant.kevin-bell.com/">
           Continue to authenticated access
           <span aria-hidden="true">↗</span>
@@ -193,11 +239,12 @@
           <img src="assets/mark.svg" width="30" height="30" alt="">
           <span>KevinBeLLM</span>
         </a>
-        <p>Local AI, built to stay useful as the world changes.</p>
+        <p>Owner-operated AI with explicit security boundaries.</p>
       </div>
       <p class="footer-meta">
-        No trackers. No browser-side authentication. No secrets in this site.
-        <a href="https://github.com/bell-kevin/ASUS-KevinBeLLM">AGPL source ↗</a>
+        No trackers. No browser-side authentication. No secrets or health probes.
+        <a href="https://github.com/bell-kevin/KevinBeLLM">AGPL source ↗</a>
+        <a href="https://github.com/bell-kevin/KevinBeLLM/blob/main/SECURITY.md">Security ↗</a>
       </p>
     </footer>
   </body>

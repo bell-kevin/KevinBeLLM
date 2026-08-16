@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-name: asus-kevin-remote-access
+name: kevinbellm-remote-access
 
 services:
   cloudflared:
@@ -11,6 +11,7 @@ services:
     network_mode: host
     command:
       - tunnel
+      - --no-autoupdate
       - --metrics
       - "127.0.0.1:${CLOUDFLARED_METRICS_PORT:-20241}"
       - --loglevel
@@ -38,8 +39,8 @@ services:
       test:
         - CMD
         - cloudflared
-        - --no-autoupdate
         - tunnel
+        - --no-autoupdate
         - --metrics
         - "127.0.0.1:${CLOUDFLARED_METRICS_PORT:-20241}"
         - ready

@@ -2,3 +2,6 @@
 services:
   searxng:
     userns_mode: keep-id
+    # scripts/start.sh verifies /config before starting dependent services.
+    healthcheck:
+      disable: true

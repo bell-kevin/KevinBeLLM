@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 
-USER_AGENT = "ASUS-KevinBeLLM/1.0 (local read-only assistant tools)"
+USER_AGENT = "KevinBeLLM/2.0 (local read-only assistant tools)"
 REQUEST_TIMEOUT = httpx.Timeout(20.0, connect=8.0)
 MAX_UPSTREAM_BYTES = 2 * 1024 * 1024
 

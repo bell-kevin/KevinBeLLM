@@ -1,0 +1,17 @@
+# Keep Linux entry points and service/config templates deployable from Windows.
+*.sh text eol=lf
+*.service text eol=lf
+*.service.in text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.env.example text eol=lf
+*.example.env text eol=lf
+*.md text eol=lf
+*.py text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+.gitignore text eol=lf
+
+# Native Windows helpers should retain Windows line endings.
+*.ps1 text eol=crlf

@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[Unit]
+Description=KevinBeLLM optional two-machine llama.cpp inference coordinator
+Documentation=https://github.com/ggml-org/llama.cpp/tree/b10451/tools/server
+Requires=kevinbellm-rpc-tunnel.service
+After=kevinbellm-rpc-tunnel.service
+# Keep retrying after a worker reboot/outage. A deliberate stop is still final
+# because Restart=on-failure does not restart an administratively stopped unit.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+# Conservative 20 GB two-card defaults. The private env file can override all
+# of these model/runtime settings, but never the loopback endpoints below.
+Environment=LLAMA_ARG_CTX_SIZE=8192
+Environment=LLAMA_ARG_N_PARALLEL=1
+Environment=LLAMA_ARG_CACHE_RAM=0
+Environment=LLAMA_ARG_SPLIT_MODE=layer
+Environment=LLAMA_ARG_N_GPU_LAYERS=auto
+Environment=LLAMA_ARG_FIT=on
+Environment=LLAMA_ARG_JINJA=true
+Environment=LLAMA_ARG_CACHE_TYPE_K=q8_0
+Environment=LLAMA_ARG_CACHE_TYPE_V=q8_0
+Environment=LLAMA_MODEL_ALIAS=kevinbellm-27b
+Environment=CUDA_VISIBLE_DEVICES=0
+EnvironmentFile=@COORDINATOR_ENV@
+UnsetEnvironment=XDG_CONFIG_HOME HOME LLAMA_ARG_RPC LLAMA_ARG_RPC_SERVERS LLAMA_ARG_HF_REPO LLAMA_ARG_HF_FILE LLAMA_ARG_MODEL_URL LLAMA_ARG_DOCKER_REPO LLAMA_ARG_MODELS_PRESET LLAMA_ARG_MODELS_DIR LLAMA_ARG_MCP_SERVERS_CONFIG LLAMA_ARG_MCP_SERVERS_JSON LLAMA_ARG_TOOLS LLAMA_ARG_TOOLS_RUNTIME LLAMA_ARG_AGENT LLAMA_SERVER_ROUTER_PORT LLAMA_SERVER_CHILD_MODE LLAMA_APP_CMD AIP_MODE AIP_HEALTH_ROUTE AIP_PREDICT_ROUTE AIP_HTTP_PORT
+ExecCondition=/usr/bin/test "${ACKNOWLEDGE_LLAMA_RPC_RCE}" = YES_I_ACCEPT_UNAUTHENTICATED_RCE_RISK
+# These endpoint arguments intentionally override any same-named env setting.
+ExecStart="@LLAMA_SERVER_BIN@" --model ${MODEL_PATH} --alias ${LLAMA_MODEL_ALIAS} --host 127.0.0.1 --port 8080 --offline --no-agent --no-webui --rpc 127.0.0.1:50053
+Restart=on-failure
+RestartSec=15
+TimeoutStartSec=0
+TimeoutStopSec=120
+UMask=0077
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectControlGroups=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+# Ubuntu's user manager rejects capability-changing directives such as
+# CapabilityBoundingSet=, ProtectClock=, ProtectKernelModules=, and
+# ProtectKernelLogs= with status 218/CAPABILITIES. This service is already an
+# unprivileged user process, and NoNewPrivileges prevents gaining capabilities.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+ReadWritePaths=-%h/.cache/llama.cpp
+InaccessiblePaths=-%h/.ssh -%h/.gnupg -%h/.config -/etc/llama.cpp
+
+[Install]
+WantedBy=default.target

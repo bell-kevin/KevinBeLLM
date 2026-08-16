@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-name: asus-kevin-bellm
+name: kevinbellm
 
 services:
   assistant-web:
     build:
       context: ./services/assistant-web
     restart: unless-stopped
-    # Host networking reaches Ollama/search/tools that remain loopback-only.
+    # Host networking reaches the inference/search/tool APIs that remain loopback-only.
     # The app itself also binds loopback, so no LAN port is published.
     network_mode: host
     environment:
@@ -14,23 +14,27 @@ services:
       APP_PORT: "${APP_PORT:-3000}"
       PUBLIC_URL: "${PUBLIC_URL:-http://localhost:3000}"
       DATA_DIR: "/data"
-      OLLAMA_BASE_URL: "http://127.0.0.1:11434"
+      INFERENCE_BACKEND: "${INFERENCE_BACKEND:-llamacpp}"
+      INFERENCE_BASE_URL: "${INFERENCE_BASE_URL:-http://127.0.0.1:8080}"
       SEARXNG_URL: "http://127.0.0.1:${SEARXNG_HOST_PORT:-8888}"
       LIVE_TOOLS_URL: "http://127.0.0.1:${LIVE_TOOLS_HOST_PORT:-8090}"
-      DEFAULT_MODEL: "${DEFAULT_MODEL:-qwen3.6:35b-a3b-q4_K_M}"
-      PREFERRED_MODELS: "${PREFERRED_MODELS:-qwen3.6:35b-a3b-q4_K_M,qwen3.5:9b-q4_K_M}"
+      DEFAULT_MODEL: "${DEFAULT_MODEL:-kevinbellm-9b}"
+      PREFERRED_MODELS: "${PREFERRED_MODELS:-kevinbellm-9b,kevinbellm-27b}"
       OLLAMA_CONTEXT_LENGTH: "${OLLAMA_CONTEXT_LENGTH:-16384}"
+      CHAT_CONCURRENCY: "${CHAT_CONCURRENCY:-1}"
       CHAT_PENDING: "${CHAT_PENDING:-2}"
       CHAT_QUEUE_TIMEOUT_SECONDS: "${CHAT_QUEUE_TIMEOUT_SECONDS:-30}"
       CHAT_DEADLINE_SECONDS: "${CHAT_DEADLINE_SECONDS:-1200}"
       FETCH_DEADLINE_SECONDS: "${FETCH_DEADLINE_SECONDS:-30}"
       DATABASE_CONCURRENCY: "${DATABASE_CONCURRENCY:-8}"
-      SOURCE_URL: "${SOURCE_URL:-https://github.com/bell-kevin/ASUS-KevinBeLLM}"
+      SOURCE_URL: "${SOURCE_URL:-https://github.com/bell-kevin/KevinBeLLM}"
     volumes:
       - assistant-data:/data
     depends_on:
       live-tools:
-        condition: service_healthy
+        # start.sh performs an explicit HTTP readiness check. This avoids
+        # depending on Podman 4.9's broken rootless systemd health timers.
+        condition: service_started
     read_only: true
     cap_drop:
       - ALL
@@ -64,6 +68,18 @@ services:
       - no-new-privileges:true
     tmpfs:
       - /tmp:size=32m,mode=1777
+    # Keep this in Compose as well as the Dockerfile: Podman's default OCI
+    # image format discards Dockerfile HEALTHCHECK metadata.
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     logging:
       driver: json-file
       options:
@@ -71,4 +87,4 @@ services:
 
 volumes:
   assistant-data:
-    name: asus-kevin-bellm-data
+    name: "${KEVINBELLM_DATA_VOLUME:-kevinbellm-data}"

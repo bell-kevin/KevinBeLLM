@@ -4,3 +4,10 @@ services:
     # Map the rootless host user to the image's unprivileged application UID.
     # This lets UID 10001 write the named SQLite volume without recursive chown.
     userns_mode: "keep-id:uid=10001,gid=10001"
+    healthcheck:
+      disable: true
+  live-tools:
+    # Podman 4.9 cannot register rootless health timers reliably on this host;
+    # scripts/start.sh performs HTTP readiness checks instead.
+    healthcheck:
+      disable: true
