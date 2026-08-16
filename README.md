@@ -160,24 +160,80 @@ trusted. Never expose either RPC port to the LAN, a Cloudflare route, or a
 router port forward. See [SECURITY.md](SECURITY.md) for reporting and deployment
 guidance.
 
+## Assistant behavior
+
+Answers stream from llama.cpp as the model produces them, so first visible text
+arrives in about 0.25 s instead of after the whole generation. The terminating
+message carries the authoritative answer, so the live preview can never diverge
+from the stored reply.
+
+Finished answers render as Markdown in the browser, and retrieved sources appear
+as a separate citation card rather than as URLs appended to the answer text. The
+renderer is a deferred script that degrades safely: if it fails to load, answers
+remain readable as the plain streamed text and the citation card is dropped
+rather than rendered through an unvetted URL check.
+
+Qwen3.5's extended thinking is off by default and enabled per request with the
+`Think` toggle, which is slower to start and better on hard questions. When it
+is on, the thinking text streams into a collapsible block above the answer. Both
+modes fit the 32,768-token context.
+
 ## Project layout
 
 - `services/assistant-web/` — authenticated FastAPI assistant with a llama.cpp
   OpenAI-compatible backend adapter.
+- `services/live-tools/` — small read-only FastAPI tool service: Open-Meteo
+  weather and forecast, and Hugging Face model discovery. It has no shell,
+  filesystem, model-download, email, or account tools.
+- `scripts/` — Machine A lifecycle helpers: setup, start, status, doctor, stop,
+  autostart installation, and container-engine selection.
 - `scripts/cluster/` — Ubuntu preparation, SSH hardening, pinned builds, model
   download, tunnel setup, service installation, and status checks.
 - `systemd/cluster/` — hardened standalone, optional worker, tunnel, and
   coordinator templates.
 - `scripts/windows/` — administration-laptop SSH setup and private forwarding.
 - `infra/cluster/` — non-secret examples; active environment files are ignored.
+- `infra/search/` — loopback-only SearXNG built from a pinned image digest, used
+  both as a browser UI and as the model's search tool.
+- `infra/cloudflare/` — the named-tunnel adapter for authenticated remote
+  access; its token file and environment are ignored.
 - `docs/` — source for the static
   [GitHub Pages landing site](https://bell-kevin.github.io/KevinBeLLM/) and the
-  authoritative deployment guide.
+  optional two-node setup guide.
 
 KevinBeLLM retains Argon2 password hashing, hashed sessions, CSRF and origin
 checks, a bounded tool loop, SearXNG integration, live-data tools, and a
 rootless-container layout. Cloudflare Access supplements this application
 login; it does not replace it.
+
+## Tests and checks
+
+GitHub Actions runs on pull requests and on pushes to `main`, with pinned action
+digests and no persisted credentials. It installs the assistant's locked test
+dependencies with `--require-hashes` and then runs:
+
+- `pytest` for the assistant service;
+- `node --test` for the browser Markdown renderer;
+- `bash -n` over every tracked shell script, and a PowerShell parse check over
+  the Windows administration scripts;
+- `scripts/check-standalone-contract.sh`, which pins the standalone unit's
+  inference settings and its no-RPC security invariants, so retuning inference
+  fails the build until the expected values are updated deliberately;
+- `scripts/check-public-tree.sh`, which fails if a private runtime file, model,
+  database, key, host-trust file, or tunnel-token-shaped credential is ever
+  tracked.
+
+The same checks run locally from the repository root. The Python tests need the
+locked development dependencies in the active environment; the other three need
+nothing installed:
+
+```bash
+python -m pip install --require-hashes -r services/assistant-web/requirements-dev.lock
+(cd services/assistant-web && python -m pytest -q)
+node --test services/assistant-web/tests/markdown.test.mjs
+./scripts/check-standalone-contract.sh
+./scripts/check-public-tree.sh
+```
 
 ## License and public source
 
