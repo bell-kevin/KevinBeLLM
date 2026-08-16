@@ -215,11 +215,7 @@ The output must show all of the following:
 Start only after the Access policy and protected route have been reviewed:
 
 ```bash
-../../scripts/compose.sh \
-  -f compose.yaml \
-  --env-file .env \
-  -p kevinbellm-remote-access \
-  up -d
+../../scripts/start-remote.sh
 ../../scripts/compose.sh \
   -f compose.yaml \
   --env-file .env \
@@ -230,11 +226,14 @@ Start only after the Access policy and protected route have been reviewed:
   --env-file .env \
   -p kevinbellm-remote-access \
   logs --tail=100 cloudflared
+curl --fail http://127.0.0.1:20241/ready
 ```
 
 The service is healthy only when its loopback `/ready` endpoint reports an
-active tunnel connection. Keep log level at `info`; debug logging can contain
-request details.
+active tunnel connection. `start-remote.sh` waits for that endpoint and fails
+closed if it never becomes ready. If you changed `CLOUDFLARED_METRICS_PORT`,
+use that loopback port in the manual `curl` check. Keep log level at `info`;
+debug logging can contain request details.
 
 For automatic recovery after Machine A is powered on and its encrypted disk is
 physically unlocked, use the repository's remote systemd-user autostart flow:

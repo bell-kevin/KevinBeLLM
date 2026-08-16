@@ -33,10 +33,18 @@ wait_for_http() {
 
 app_port="$(env_value "${project_dir}/.env" APP_PORT)"
 tools_port="$(env_value "${project_dir}/.env" LIVE_TOOLS_HOST_PORT)"
+app_search_port="$(env_value "${project_dir}/.env" SEARXNG_HOST_PORT)"
 search_port="$(env_value "${project_dir}/infra/search/.env" SEARXNG_HOST_PORT)"
 app_port="${app_port:-3000}"
 tools_port="${tools_port:-8090}"
+app_search_port="${app_search_port:-8888}"
 search_port="${search_port:-8888}"
+
+if [[ "${app_search_port}" != "${search_port}" ]]; then
+  echo "SEARXNG_HOST_PORT must match in .env and infra/search/.env." >&2
+  echo "Found ${app_search_port} in .env and ${search_port} in infra/search/.env." >&2
+  exit 1
+fi
 
 "${project_dir}/scripts/inference.sh" ensure
 
