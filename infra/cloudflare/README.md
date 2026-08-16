@@ -27,7 +27,7 @@ named Tunnel connector on Machine A (outbound connection only)
 KevinBeLLM application login
         |
         v
-local llama.cpp coordinator -> restricted SSH tunnel -> Machine B RPC worker
+standalone llama.cpp on Machine A -> RTX 3060 everyday model
 ```
 
 GitHub Pages is only a public landing page. It is not an authentication layer,
@@ -39,7 +39,8 @@ The connector deliberately uses host networking so that a rootless container
 can reach Machine A's loopback-bound origin. The Compose service publishes no
 ports, binds its metrics endpoint to loopback, runs as Machine A's unprivileged
 UID/GID, drops every Linux capability, and uses a read-only root filesystem.
-Keep Machine B out of this path.
+Keep Machine B out of this path. The optional two-node inference profile does
+not change the browser-facing origin or give B a public route.
 
 ## Prerequisites
 
@@ -138,7 +139,7 @@ initially reachable without Access.
    scoped identity-provider group. Set an appropriate session duration and use
    MFA when the chosen identity provider supports it.
 3. Following the [named-tunnel setup][create-tunnel], create a remotely managed
-   tunnel with a durable name such as `kevinbellm-two-node`.
+   tunnel with a topology-neutral durable name such as `kevinbellm`.
 4. Add a published application route for the same hostname with service
    `http://127.0.0.1:3000`.
 5. Enable **Protect with Access** on that route so `cloudflared` validates the

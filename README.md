@@ -1,26 +1,23 @@
-# KevinBeLLM: two-node local AI
+# KevinBeLLM: private local AI
 
-KevinBeLLM is an AGPL-licensed, self-hosted AI workspace served from two
-Ethernet-connected Ubuntu desktops. This repository continues the original
-proof of concept at its existing public URL. Its current architecture is a
-two-host Ampere design:
+KevinBeLLM is an AGPL-licensed, self-hosted AI workspace served from owned
+Ubuntu hardware. This repository continues the original proof of concept at
+its existing public URL. The everyday architecture is deliberately simple:
 
 ```text
 Remote browser
   -> Cloudflare Access
   -> outbound-only Cloudflare Tunnel
-  -> Machine A: KevinBeLLM login + app + llama-server + RTX 3060 12 GiB
-                                                  |
-                                                  | restricted SSH tunnel
-                                                  v
-                  Machine B: loopback-only llama.cpp RPC + RTX 3070 8 GiB
+  -> Machine A: KevinBeLLM login + app + standalone llama-server
+                Qwen3.5-9B Q6_K fully on the RTX 3060 12 GiB
 ```
 
-Machine A coordinates inference and serves the authenticated application.
-Machine B contributes GPU layers through a loopback-only llama.cpp RPC worker.
-The app, model API, and RPC listener are not published directly to the LAN or
-Internet; SSH is the only LAN-facing administration service, and remote web
-traffic arrives through an outbound Cloudflare Tunnel.
+Machine B's RTX 3070 remains available for maintenance, experiments, or the
+explicitly optional 27B two-node profile. Normal service does not depend on
+Machine B and starts no llama.cpp RPC process, tunnel, or listener. The app and
+model API are not published directly to the LAN or Internet; SSH is the only
+LAN-facing administration service, and remote web traffic arrives through an
+outbound Cloudflare Tunnel.
 
 The public [GitHub Pages site](docs/index.html) is only a static project landing
 page. It has no login form, runtime probe, model-health indicator, analytics, or
@@ -32,8 +29,8 @@ through KevinBeLLM's own login.
 
 | Role | GPU | Nominal VRAM | Workload |
 | --- | --- | ---: | --- |
-| Machine A, coordinator | NVIDIA GeForce RTX 3060 | 12 GiB | KevinBeLLM, llama-server, local GPU layers |
-| Machine B, worker | NVIDIA GeForce RTX 3070 | 8 GiB | Restricted llama.cpp RPC worker |
+| Machine A, primary | NVIDIA GeForce RTX 3060 | 12 GiB | App and fully GPU-resident everyday model |
+| Machine B, optional | NVIDIA GeForce RTX 3070 | 8 GiB | Maintenance and deliberate two-node experiments |
 
 Both GPUs are Ampere devices with CUDA compute capability 8.6, so they use the
 same pinned llama.cpp source revision and CUDA build configuration. Their 20
@@ -41,42 +38,48 @@ GiB of nominal VRAM remains two
 separate memory pools: bandwidth does not add together, and CUDA contexts,
 compute buffers, KV cache, and display use consume part of each card.
 
-The checked-in model installer pins
-`Qwen_Qwen3.5-27B-Q4_K_M.gguf` (17,984,872,928 bytes) and verifies its SHA-256
-before use. The setup guide calls for a conservative first load with one
-request slot and a 4K context; larger contexts should be enabled only after
-measuring real VRAM headroom.
+The default model installer pins `Qwen_Qwen3.5-9B-Q6_K.gguf` at immutable
+revision `182be2fd6c7bc44887d88a91cb03ff009cc9f549`, verifies its exact
+7,958,818,848-byte size and SHA-256, and refuses mismatched files. On Machine A,
+the measured MTP configuration generated `53.985 ± 0.057` tokens/second over
+three 128-token runs, retained about 4.3 GiB of free VRAM, and passed a
+coherent OpenAI-compatible tool-call check. Results are local measurements,
+not a guarantee for other systems.
 
-For smaller models or concurrent users, one independent model server per GPU
-may provide better aggregate throughput than splitting every request across the
-network. Installing both cards in one compatible host would remove the network
-RPC boundary, but only after confirming motherboard lanes, case clearance,
-cooling, and PSU capacity.
+The optional pinned 27B Q4_K_M artifact is retained for comparison. It needs
+CPU offload on A alone and measured only about 1.42 tokens/second with the
+conservative build, so it is not the interactive default. The existing
+two-machine profile can distribute it across both GPUs only after the operator
+accepts the separate RPC security warning.
 
 ## Cold boots and remote availability
 
 Both hosts use full-disk encryption. After power loss or shutdown, someone must
-physically power on each machine and enter its LUKS passphrase; Wake-on-LAN and
-SSH cannot bypass that pre-boot step. Once the disks are unlocked, enabled user
-services can restore the worker, restricted tunnel, coordinator, and app
-without a graphical login.
+physically power on a required machine and enter its LUKS passphrase; Wake-on-LAN
+and SSH cannot bypass that pre-boot step. Everyday service needs only Machine A.
+Once A is unlocked, enabled user services can restore inference, the app, and
+the outbound connector without a graphical login. Machine B needs physical
+unlock only when its optional services are intentionally used.
 
 This repository intentionally does not publish current uptime, unlock state,
 model availability, internal addresses, or service health.
 
 ## Deployment and administration
 
-Follow [the two-node setup guide](docs/TWO_NODE_SETUP.md) for the staged
-installation. It covers:
+Follow [the cluster helper guide](infra/cluster/README.md) for the safe
+standalone installation. It covers:
 
 - physical inventory and encrypted-boot behavior;
 - stable router DHCP reservations without public port forwarding;
 - fingerprint-verified, key-only SSH from Windows;
-- the matching pinned legacy-CPU-safe llama.cpp source and CUDA configuration;
-- the restricted Machine A-to-B tunnel and systemd user services;
+- the pinned llama.cpp source and CUDA configuration;
+- the standalone Machine A systemd user service;
 - checksum-verified model installation;
 - KevinBeLLM startup, validation, benchmarking, and rollback;
 - an outbound Cloudflare Tunnel protected by Cloudflare Access.
+
+The much longer [two-node setup guide](docs/TWO_NODE_SETUP.md) is retained for
+the optional 27B RPC experiment; it is not required for normal operation.
 
 The checked-in cluster helpers and ignored private environment files are
 documented in [infra/cluster/README.md](infra/cluster/README.md).
@@ -121,16 +124,19 @@ The deployed application uses the local llama.cpp OpenAI-compatible endpoint:
 ```dotenv
 INFERENCE_BACKEND=llamacpp
 INFERENCE_BASE_URL=http://127.0.0.1:8080
-DEFAULT_MODEL=kevinbellm-27b
+DEFAULT_MODEL=kevinbellm-9b
+PREFERRED_MODELS=kevinbellm-9b,kevinbellm-27b
 ```
 
 The inference address is required to remain on loopback.
 
-## RPC security boundary
+## Optional RPC security boundary
 
-Do not skip the RPC warning in the setup documents. llama.cpp describes its RPC
-backend as experimental and insecure, and the backend has had critical
-unauthenticated code-execution vulnerabilities. This project therefore:
+The standalone default has no RPC process, dependency, command-line argument,
+or listener and does not require a risk acknowledgment. If the optional
+two-node profile is selected, do not skip its warning: llama.cpp describes its
+RPC backend as experimental and insecure, and the backend has had critical
+unauthenticated code-execution vulnerabilities. That profile therefore:
 
 - binds the worker to `127.0.0.1:50052`;
 - binds Machine A's forwarded endpoint to `127.0.0.1:50053`;
@@ -149,7 +155,8 @@ guidance.
   OpenAI-compatible backend adapter.
 - `scripts/cluster/` — Ubuntu preparation, SSH hardening, pinned builds, model
   download, tunnel setup, service installation, and status checks.
-- `systemd/cluster/` — hardened worker, tunnel, and coordinator templates.
+- `systemd/cluster/` — hardened standalone, optional worker, tunnel, and
+  coordinator templates.
 - `scripts/windows/` — administration-laptop SSH setup and private forwarding.
 - `infra/cluster/` — non-secret examples; active environment files are ignored.
 - `docs/` — static GitHub Pages landing site and the authoritative deployment

@@ -44,6 +44,10 @@ jobs:
         shell: bash
         run: git ls-files -z '*.sh' | xargs -0 -n1 bash -n
 
+      - name: Check standalone inference contract
+        shell: bash
+        run: bash scripts/check-standalone-contract.sh
+
       - name: Check browser JavaScript syntax
         run: |
           node --check services/assistant-web/static/app.js

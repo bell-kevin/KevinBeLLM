@@ -3,7 +3,7 @@
 # policies are entered in the Cloudflare dashboard; cloudflared does not read
 # this file. Replace all example values before following README.md.
 tunnel:
-  name: kevinbellm-two-node
+  name: kevinbellm
   public_hostname: assistant.example.com
   service: http://127.0.0.1:3000
   protect_with_access: true

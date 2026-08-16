@@ -5,15 +5,18 @@ repository are licensed under `AGPL-3.0-or-later`. The following independent
 programs, model weights, data, and hosted services retain their own terms. They
 are not relicensed by this repository.
 
-The table inventories the target two-node deployment. The application retains
-an explicit legacy Ollama API adapter, but this repository neither installs nor
-pins an Ollama runtime or Ollama-hosted model artifact for the new deployment.
+The table inventories the standalone default and optional two-node deployment.
+The application retains an explicit legacy Ollama API adapter, but this
+repository neither installs nor pins an Ollama runtime or Ollama-hosted model
+artifact for the new deployment.
 
 ## Software and model components
 
 | Component | Pinned/recommended version | Upstream license | Source |
 |---|---|---|---|
 | llama.cpp | `b10451` | MIT | <https://github.com/ggml-org/llama.cpp/tree/b10451> |
+| Qwen3.5 9B weights | official revision `c202236235762e1c871ad0ccb60c8ee5ba337b9a` | Apache-2.0 | <https://huggingface.co/Qwen/Qwen3.5-9B/tree/c202236235762e1c871ad0ccb60c8ee5ba337b9a> |
+| Qwen3.5 9B Q6_K GGUF | `bartowski/Qwen_Qwen3.5-9B-GGUF` revision `182be2fd6c7bc44887d88a91cb03ff009cc9f549` | Apache-2.0 | <https://huggingface.co/bartowski/Qwen_Qwen3.5-9B-GGUF/tree/182be2fd6c7bc44887d88a91cb03ff009cc9f549> |
 | Qwen3.5 27B weights | official base | Apache-2.0 | <https://huggingface.co/Qwen/Qwen3.5-27B> |
 | Qwen3.5 27B Q4_K_M GGUF | `bartowski/Qwen_Qwen3.5-27B-GGUF` revision `d7b113c40283f4d99f4eb0ec20d126ad653cc736` | Apache-2.0 | <https://huggingface.co/bartowski/Qwen_Qwen3.5-27B-GGUF/tree/d7b113c40283f4d99f4eb0ec20d126ad653cc736> |
 | SearXNG | commit `c01178d03` | AGPL-3.0-or-later | <https://github.com/searxng/searxng/tree/c01178d03> |
@@ -36,11 +39,14 @@ packages are pinned with distribution hashes in the checked-in lock files; the
 lock files are the authoritative inventory of installed Python package
 versions. Each dependency retains its upstream license.
 
-The deployed GGUF is `Qwen_Qwen3.5-27B-Q4_K_M.gguf`, exactly 17,984,872,928
-bytes with SHA-256
+The everyday GGUF is `Qwen_Qwen3.5-9B-Q6_K.gguf`, exactly 7,958,818,848 bytes
+with SHA-256
+`073a9275e65d9c8cd2819cf5f77b99fbaa6e87ba591da6bbaa86ec073a64bfef`.
+The optional two-node GGUF is `Qwen_Qwen3.5-27B-Q4_K_M.gguf`, exactly
+17,984,872,928 bytes with SHA-256
 `81657841d62f1821c748d0fea6c260b7d3508844fe4e9250253ef81c4e4d9edf`.
-The download helper pins the immutable repository revision above and refuses
-artifacts that do not match both the byte count and digest.
+The download helper pins both immutable repository revisions and refuses
+artifacts that do not match both their byte count and digest.
 
 The model repository metadata and exact GGUF artifact should be checked again
 before redistributing model blobs. Every model discovered through Hugging Face
@@ -48,9 +54,10 @@ has its own license; a repository being public or downloadable does not make it
 FLOSS. Missing, custom, research-only, or noncommercial model licenses require
 separate review.
 
-The two-node path builds llama.cpp with its experimental RPC backend. Upstream
-calls that backend insecure, and the pinned release is not represented here as
-a security fix for `CVE-2026-34159`. See `SECURITY.md` and recheck upstream
+The default standalone service does not start or connect to RPC. The optional
+two-node path builds llama.cpp with its experimental RPC backend. Upstream calls
+that backend insecure, and the pinned release is not represented here as a
+security fix for `CVE-2026-34159`. See `SECURITY.md` and recheck upstream
 advisories before every pin change. A separately packaged GGUF retains both the
 base model's license and any applicable packaging terms; record the exact
 repository, filename, size, and SHA-256 digest used by a real deployment.

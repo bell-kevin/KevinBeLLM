@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 title: "KevinBeLLM"
-description: "A private two-GPU AI workspace with controlled live-web tools."
+description: "A private local-GPU AI workspace with controlled live-web tools."
 lang: "en-US"
 
 # GitHub Pages configuration only. The authenticated assistant URL is kept as

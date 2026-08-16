@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import replace
 
 import httpx
 import pytest
@@ -130,6 +131,37 @@ def test_llamacpp_model_discovery_is_normalized(tmp_path) -> None:
         ],
         "default_model": "test-model",
     }
+
+
+@pytest.mark.parametrize(
+    ("configured_default", "advertised_model"),
+    [
+        ("kevinbellm-27b", "kevinbellm-9b"),
+        ("kevinbellm-9b", "kevinbellm-27b"),
+    ],
+)
+def test_llamacpp_model_discovery_follows_active_service_profile(
+    tmp_path, configured_default: str, advertised_model: str
+) -> None:
+    settings = replace(
+        _settings(tmp_path, backend="llamacpp"),
+        default_model=configured_default,
+        preferred_models=("kevinbellm-9b", "kevinbellm-27b"),
+    )
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"data": [{"id": advertised_model, "meta": {"n_params": 9_000_000_000}}]},
+        )
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await installed_models(client, settings)
+
+    result = asyncio.run(run())
+    assert result["default_model"] == advertised_model
+    assert result["models"][0]["recommended"] is True
 
 
 def test_llamacpp_chat_completion_is_normalized(tmp_path) -> None:

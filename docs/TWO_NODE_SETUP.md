@@ -1,12 +1,19 @@
 # Two-node KevinBeLLM setup
 
+> **Optional high-risk capacity experiment:** the production default is the
+> standalone 9B service on Machine A documented in
+> [`infra/cluster/README.md`](../infra/cluster/README.md). It is substantially
+> faster for interactive use and starts or reaches no RPC parser. This guide is
+> retained for deliberate 27B comparisons only. Do not perform its worker/tunnel
+> steps unless the RPC warning below has been read and explicitly accepted.
+
 This guide turns the two Ethernet-connected desktops into one private inference
 service while keeping the Windows laptop as the control console. It is written
 for Ubuntu hosts with NVIDIA drivers and passphrase-backed encrypted disks. Do
 not run the mutating steps until the inventory section confirms that assumption
 on both machines.
 
-The recommended first build is:
+The optional topology is:
 
 ```text
 Windows laptop (browser + SSH client; may sleep or disconnect)
@@ -557,10 +564,10 @@ before enabling the coordinator:
 ```bash
 df -h "$HOME/models"
 ./scripts/cluster/download-model.sh --help
-./scripts/cluster/download-model.sh
+./scripts/cluster/download-model.sh --preset 27b-q4_k_m
 ```
 
-The default output is
+For this explicit preset, the default output is
 `$HOME/models/Qwen_Qwen3.5-27B-Q4_K_M.gguf`. Keep at least several GiB beyond
 the 17.98 GB file free on A; B also needs free space if the RPC tensor cache is
 enabled.
@@ -580,6 +587,7 @@ Set these values and leave the remaining conservative defaults in place:
 ACKNOWLEDGE_LLAMA_RPC_RCE=YES_I_ACCEPT_UNAUTHENTICATED_RCE_RISK
 WORKER_SSH_TARGET=llama-rpc-tunnel@<machine-b-reserved-ip>
 WORKER_SSH_PORT=22
+MODEL_PRESET=27b-q4_k_m
 MODEL_PATH=/home/<linux-user>/models/Qwen_Qwen3.5-27B-Q4_K_M.gguf
 LLAMA_MODEL_ALIAS=kevinbellm-27b
 LLAMA_ARG_CTX_SIZE=4096
@@ -601,7 +609,7 @@ Review the templates before installation:
 
 - `systemd/cluster/llama-rpc-worker.service.in` runs on B;
 - `systemd/cluster/llama-rpc-tunnel.service.in` runs on A;
-- `systemd/cluster/llama-server.service.in` runs on A after the tunnel;
+- `systemd/cluster/llama-server-rpc.service.in` runs on A after the tunnel;
 - `scripts/cluster/install-services.sh` renders and installs them;
 - `scripts/cluster/cluster-status.sh` checks the resulting chain.
 
@@ -685,7 +693,8 @@ latest version during recovery.
 INFERENCE_BACKEND=llamacpp
 INFERENCE_BASE_URL=http://127.0.0.1:8080
 DEFAULT_MODEL=kevinbellm-27b
-PREFERRED_MODELS=kevinbellm-27b
+PREFERRED_MODELS=kevinbellm-9b,kevinbellm-27b
+CHAT_CONCURRENCY=1
 ```
 
 For the llama.cpp backend, context is controlled by
@@ -773,13 +782,13 @@ also does not become shared VRAM.
 
 | Model class | Typical Q4 weight artifact | Recommended use here |
 |---|---:|---|
-| 9B dense | about 5.6-5.9 GB | Run on either one GPU; usually faster and simpler without RPC. |
-| 27B dense | about 17-18 GB | Plausible across both GPUs at 4K, possibly 8K context; this is the first cluster target. |
+| 9B dense Q6_K | about 7.96 GB | Production default on A; fully GPU-resident and much faster without RPC. |
+| 27B dense Q4_K_M | about 17.98 GB | Optional capacity test across both GPUs at 4K; not the interactive default. |
 | 30B MoE Q4_K_M | about 18.6 GB | Borderline but plausible; benchmark context and scratch headroom. |
 | 35B MoE Q4_K_M | about 20.4-21.2 GB for weights alone; roughly 22-24+ GB working need | Does not fully fit in the nominal 20 GiB pool. CPU offload can run it, but it is no longer an all-VRAM workload. |
 
-For concrete artifacts, a Qwen3.5 9B Q4_K_M conversion is listed at 5.63 GB
-([9B artifact][qwen-9b]), a Qwen3.5 27B Q4_K_M conversion at 17.98 GB
+For concrete artifacts, the pinned Qwen3.5 9B Q6_K conversion is 7.96 GB
+([9B artifact][qwen-9b]), the Qwen3.5 27B Q4_K_M conversion is 17.98 GB
 ([27B artifact][qwen-27b]), and the ggml-org Qwen3.6 35B Q4_K_M file at 20.4 GB
 before runtime allocations ([35B artifact][qwen-35b]). Artifact repositories and
 tags can change: record the model repository revision, filename, byte size,
@@ -802,7 +811,7 @@ resumes through a `.part` file, validates byte count and SHA-256, and refuses to
 overwrite a mismatching file:
 
 ```bash
-./scripts/cluster/download-model.sh
+./scripts/cluster/download-model.sh --preset 27b-q4_k_m
 ```
 
 Do not continue on a mismatch. Review the source model and quantizer licenses
@@ -887,10 +896,11 @@ Fill this matrix rather than relying on somebody else's token rate:
 
 | Test | Model/context | Placement | Cold load s | pp512 tok/s | tg128 tok/s | Peak A VRAM | Peak B VRAM | Notes |
 |---|---|---|---:|---:|---:|---:|---:|---|
-| A1 | 9B Q4 / 4K | A / 3060 only | | | | | n/a | simple baseline |
-| B1 | 9B Q4 / 4K | B / 3070 only | | | | n/a | | likely fastest 9B single-card path |
-| C1 | 9B Q4 / 4K | A+B / automatic | | | | | | proves whether RPC helps a small model |
-| A2 | 27B Q4 / 4K | A with CPU spill | | | | | n/a | no-pool baseline |
+| A1 | 9B Q6_K / 4K | A / 3060, normal generation | | 1544.259 ± 49.542 | 41.809 ± 0.087 | 7,379 MiB | n/a | pinned llama-bench, 3 reps |
+| A1-MTP | 9B Q6_K / 4K | A / 3060, MTP draft max 3 | | n/a | 53.985 ± 0.057 | 7,525 MiB | n/a | server API, 3×128; tool call passed |
+| B1 | 9B Q6_K / 4K | B / 3070 only | | | | n/a | | optional comparison |
+| C1 | 9B Q6_K / 4K | A+B / automatic | | | | | | RPC should not be used for production 9B |
+| A2 | 27B Q4 / 4K | A with CPU spill | | 74.37 | 1.42 | 10,387 MiB | n/a | measured no-pool baseline |
 | C2 | 27B Q4 / 4K | A+B / automatic | | | | | | primary target |
 | C3 | 27B Q4 / 4K | A+B / 12:8 | | | | | | compare split |
 | C4 | 27B Q4 / 8K | best C2/C3 split | | | | | | context headroom test |
@@ -957,7 +967,7 @@ and thermals favor it, then measure rather than assuming.
 
 ### Best throughput option: two independent servers
 
-Run a complete 9B Q4 model on each desktop and route separate conversations or
+Run a complete 9B Q6_K model on each desktop and route separate conversations or
 requests to them. This does **not** let a single 27B request use 20 GiB, but it
 can deliver more aggregate requests per minute and isolates failures. It may
 also give a single user lower latency because the 3070 is not waiting at an RPC
@@ -1204,6 +1214,6 @@ each physical power-on/unlock, with no model or UI port exposed to the LAN.
 [rpc-current-report]: https://github.com/ggml-org/llama.cpp/issues/25289
 [llama-server]: https://github.com/ggml-org/llama.cpp/blob/b10451/tools/server/README.md
 [llama-bench]: https://github.com/ggml-org/llama.cpp/blob/b10451/tools/llama-bench/README.md
-[qwen-9b]: https://huggingface.co/openresearchtools/Qwen3.5-9B-GGUF
+[qwen-9b]: https://huggingface.co/bartowski/Qwen_Qwen3.5-9B-GGUF/tree/182be2fd6c7bc44887d88a91cb03ff009cc9f549
 [qwen-27b]: https://huggingface.co/bartowski/Qwen_Qwen3.5-27B-GGUF/tree/d7b113c40283f4d99f4eb0ec20d126ad653cc736
 [qwen-35b]: https://huggingface.co/ggml-org/Qwen3.6-35B-A3B-GGUF/tree/main

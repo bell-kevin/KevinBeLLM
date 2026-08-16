@@ -1,108 +1,70 @@
-# Two-machine Ampere inference cluster
+# Machine A inference and optional two-node mode
 
-Machine A is the coordinator (RTX 3060 12 GB). Machine B is the worker (RTX
-3070 8 GB). Both run the exact llama.cpp `b10451` commit and CUDA architecture
-8.6 build flags. Machine B's RPC process listens only on `127.0.0.1:50052`.
-Machine A reaches it through a persistent, host-key-pinned SSH local forward at
-`127.0.0.1:50053`; `llama-server` listens only on `127.0.0.1:8080`.
+The safe everyday deployment runs entirely on Machine A:
 
 ```text
 Windows laptop --SSH--> Machine A:22
                             |-- UI 127.0.0.1:3000
-                            |-- llama 127.0.0.1:8080
-                            `-- 127.0.0.1:50053 ==SSH==> Machine B:22
-                                                       `-> 127.0.0.1:50052 RPC
+                            `-- llama-server 127.0.0.1:8080
+                                `-- RTX 3060: Qwen3.5-9B Q6_K
 ```
+
+Machine B is not a dependency. No llama.cpp RPC process, client address,
+tunnel, or listener is used in this profile. The optional 27B experiment is
+retained below and in [the detailed two-node guide](../../docs/TWO_NODE_SETUP.md),
+but it remains disabled unless the operator separately accepts its risk.
 
 There is deliberately no LAN listener or router port-forward for 3000, 8080,
 50052, or 50053.
 
-## Mandatory RPC security acknowledgment
+## Encrypted boot boundary
 
-Do not skip this section. Upstream labels the RPC backend a fragile, insecure
-proof of concept and says never to run it on an open network or in a sensitive
-environment. It has no protocol authentication. A critical unauthenticated RCE
-was published as [CVE-2026-34159 / GHSA-j8rj-fmpv-wcxw](https://github.com/ggml-org/llama.cpp/security/advisories/GHSA-j8rj-fmpv-wcxw),
-and a separate controlled-indirect-call path was [reported against current code](https://github.com/ggml-org/llama.cpp/issues/25289).
-Although `b10451` postdates the affected range of the first report, this setup
-must treat access to an RPC socket as equivalent to code execution as the
-service user.
+Full-disk encryption means SSH and systemd cannot start until someone physically
+powers on the required host and enters its LUKS passphrase. Everyday service
+requires only Machine A. User lingering lets inference, the application, and
+the outbound Cloudflare connector return after A is unlocked without a desktop
+login. Automatic TPM or initramfs-network unlock has a different threat model
+and is outside this deployment.
 
-The loopback binding, SSH encryption, restricted tunnel key, firewall rule, and
-systemd hardening reduce exposure; they do not make the RPC parser safe. Any
-compromised local process on A can reach A's forward, and any compromised local
-process on B can reach B's RPC listener. Do not use this design with untrusted
-users or workloads.
+Reserve the Ethernet addresses in the router for durable SSH aliases, but do
+not create any router port forwards. A DHCP client-list entry is not a
+reservation: both MAC/IP pairs must appear under **Address Reservation**.
 
-Both role env files must contain this exact, deliberate acknowledgment, and
-service installation also requires a command-line acknowledgment flag:
+## 1. Prepare Machine A and admin SSH
 
-```text
-ACKNOWLEDGE_LLAMA_RPC_RCE=YES_I_ACCEPT_UNAUTHENTICATED_RCE_RISK
-```
-
-## Before configuration
-
-1. Install a supported Ubuntu release on both machines with full-disk
-   encryption, current NVIDIA drivers, and a CUDA toolkit.
-2. In the router, reserve a stable IPv4 address for each Ethernet MAC. Do not
-   create any port forwards. Record the addresses in a private copy of
-   `inventory.example.env` named `inventory.env`.
-3. Set each firmware to power on normally when its physical power button is
-   pressed. Wake-on-LAN is optional and is not required or configured here.
-
-Full-disk encryption changes the boot boundary: after power loss, normal SSH
-cannot start until someone physically enters the LUKS passphrase. These scripts
-enable systemd user lingering, so SSH, the tunnel, and inference return
-automatically after that unlock without an interactive desktop login. Automatic
-TPM unlock or initramfs SSH unlock has a different threat model and is outside
-this setup.
-
-## 1. Prepare both Ubuntu hosts
-
-At each physical console, from a checkout of this repository:
+At A's physical console, from this repository:
 
 ```bash
 ./scripts/cluster/prepare-ubuntu-host.sh --hostname kevinbellm-a
-# Use kevinbellm-b on Machine B.
+nvidia-smi
+nvcc --version
 ```
 
-Add `--with-ubuntu-cuda` only if using Ubuntu's CUDA package rather than an
-already installed NVIDIA toolkit. Confirm `nvidia-smi` and `nvcc --version` on
-both machines.
-
-## 2. Establish laptop admin SSH
-
-On the Windows laptop, copy the inventory example, edit every placeholder, and
-run PowerShell:
+On the Windows administration laptop, populate the ignored private inventory
+and install a passphrase-protected admin key:
 
 ```powershell
 Copy-Item infra\cluster\inventory.example.env infra\cluster\inventory.env
 notepad infra\cluster\inventory.env
 .\scripts\windows\Install-KevinBeLLMSSH.ps1 -GenerateKey -InstallPublicKey
 ssh kevinbellm-a
-ssh kevinbellm-b
 ```
 
-`ssh-keygen` asks for a passphrase for the laptop admin key. When connecting for
-the first time, compare the displayed host-key fingerprint with `sudo
-ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256` run at that
-machine's physical console. Never accept an unverified fingerprint.
-
-Only after key logins work in new terminals, harden each host. Replace the user
-and CIDR with the private inventory values:
+Compare the first-login ED25519 fingerprint against the value read at A's
+physical console. Only after a second key-only login works, harden SSH from the
+trusted LAN CIDR:
 
 ```bash
 sudo ./scripts/cluster/harden-ssh.sh \
-  --admin-user YOUR_USER --lan-cidr 192.168.0.0/24 --enable-ufw
+  --admin-user "$(id -un)" --lan-cidr 192.168.0.0/24 --enable-ufw
 ```
 
-Keep the original login open while testing another key-only login. The UFW
-option allows SSH from the LAN and inserts a deny for TCP/50052.
+Keep the original session open while testing. Never add an Internet-facing SSH
+router rule.
 
-## 3. Build the same llama.cpp revision on both hosts
+## 2. Build the pinned llama.cpp revision
 
-Run on A and B as the non-root service/login user:
+Run as A's normal login/service user:
 
 ```bash
 ./scripts/cluster/install-llama-cpp.sh
@@ -110,161 +72,215 @@ cat ~/.local/opt/llama.cpp-b10451/KEVINBELLM_BUILD_SPEC.txt
 ```
 
 The installer verifies immutable commit
-`10bf611e533d81f739128304991c5e133c6aebd8` and builds `llama-server`,
-`ggml-rpc-server`, `llama-cli`, and `llama-bench` with:
+`10bf611e533d81f739128304991c5e133c6aebd8`, CUDA compute capability 8.6,
+and disabled embedded/prebuilt UI. The existing build includes the optional RPC
+tools so the later experiment remains possible, but installed binaries do not
+create a network surface by themselves. Standalone systemd never launches the
+worker binary or gives `llama-server` an RPC address.
+
+## 3. Download and verify the everyday model
+
+```bash
+./scripts/cluster/download-model.sh --preset 9b-q6_k
+```
+
+The default preset is also `9b-q6_k`, so omitting `--preset` is equivalent. The
+download resumes through a mode-private `.part` file and verifies:
 
 ```text
-GGML_CUDA=ON
-GGML_RPC=ON
-CMAKE_CUDA_ARCHITECTURES=86
-GGML_NATIVE=OFF
-GGML_AVX=OFF
-GGML_AVX2=OFF
-GGML_BMI2=OFF
-GGML_FMA=OFF
-GGML_F16C=OFF
-LLAMA_BUILD_UI=OFF
-LLAMA_USE_PREBUILT_UI=OFF
+Repository: bartowski/Qwen_Qwen3.5-9B-GGUF
+Revision:   182be2fd6c7bc44887d88a91cb03ff009cc9f549
+File:       Qwen_Qwen3.5-9B-Q6_K.gguf
+Bytes:      7958818848
+SHA-256:    073a9275e65d9c8cd2819cf5f77b99fbaa6e87ba591da6bbaa86ec073a64bfef
 ```
 
-The explicit CPU baseline keeps the same binaries runnable on the older
-pre-AVX/AVX2 host CPUs; inference remains CUDA-backed. The remaining CMake
-flags are recorded in the build-spec file. Run the same script after a failed
-build; CMake and Ninja resume idempotently. Both UI switches must remain off:
-the API does not need llama.cpp's embedded browser UI, and disabling only the
-UI build still permits an unpinned prebuilt-UI download at this revision.
-
-## 4. Establish the restricted A-to-B tunnel identity
-
-On A, generate the service key (unlocked so it can start unattended):
+It refuses output symlinks and never overwrites a mismatched final file. Verify
+an existing copy without network access with:
 
 ```bash
-./scripts/cluster/generate-tunnel-key.sh
+./scripts/cluster/download-model.sh \
+  --preset 9b-q6_k \
+  --output "$HOME/models/Qwen_Qwen3.5-9B-Q6_K.gguf" \
+  --verify-only
 ```
 
-This key is safe only in the restricted account created below. Never put it in
-a normal account's `authorized_keys`. Transfer only its `.pub` file to B using
-the already trusted admin SSH connection.
-
-At B's console or through an already verified admin session, display B's host
-key and install the tunnel public key. `--from` must be A's router-reserved LAN
-address:
+## 4. Install the standalone service
 
 ```bash
-./scripts/cluster/show-host-key-fingerprints.sh
-sudo ./scripts/cluster/install-worker-tunnel-key.sh \
-  --public-key-file /path/to/kevinbellm_rpc_tunnel_ed25519.pub \
-  --from MACHINE_A_RESERVED_IP
+./scripts/cluster/install-services.sh --role standalone --enable-now
 ```
 
-The created `llama-rpc-tunnel` account has no interactive shell. Its key is
-restricted twice (sshd plus `authorized_keys`) to client-local forwarding whose
-only destination is B's `127.0.0.1:50052`.
+The first invocation safely creates
+`~/.config/kevinbellm-cluster/standalone.env` with the absolute home path and
+mode `0600`. It verifies the GGUF before starting, enables user lingering, and
+installs `kevinbellm-llama.service`.
 
-Back on A, pin the ED25519 fingerprint read from B—not one learned from the
-network:
+No risk acknowledgment is needed. Standalone mode rejects
+`--acknowledge-rpc-risk`, first disables any installed A-side server, RPC
+tunnel, or worker, and refuses to continue if TCP/50052 or TCP/50053 is still
+owned by another local process. This happens before model/build validation, so
+a failed migration leaves inference down and the RPC path disabled. A
+successful migration replaces stale server arguments through an explicit
+restart. Its model
+path, alias, and measured tuning live in the private env file; its endpoint and
+RPC/security arguments cannot be changed there:
+
+- API: `127.0.0.1:8080` only;
+- device: `CUDA0`, split mode `none`, every model layer on the GPU;
+- no RPC address;
+- no readable system/user llama.cpp configuration that could inject RPC before
+  command-line parsing;
+- offline local-model mode, with model-router/download environment overrides
+  removed;
+- llama.cpp built-in agent mode disabled (ordinary OpenAI-compatible tool-call
+  responses remain available to KevinBeLLM);
+- a cleared runtime environment containing only `CUDA_VISIBLE_DEVICES=0`; the
+  private model/tuning values are expanded into fixed command-line positions by
+  systemd before launch;
+- no multimodal projector, embedded web UI, or slots endpoint;
+- hardened systemd filesystem, capability, namespace, and privilege controls.
+
+The measured persistent configuration is 4,096-token context, batch 2,048,
+ubatch 512, eight CPU threads, one request slot, Q8 K/V cache, flash attention,
+memory mapping, and Qwen3.5 MTP with draft maximum 3. Three repeated 128-token
+server runs measured `53.985 ± 0.057` generation tokens/second, with MTP draft
+acceptance about 52%, 4,388 MiB VRAM free, and a peak temperature of
+61°C. A forced OpenAI-compatible tool request returned exactly one parsed
+weather call. These are measurements of this Machine A, not general guarantees.
+
+Check the boundary and advertised alias:
 
 ```bash
-./scripts/cluster/pin-worker-host-key.sh \
-  --host MACHINE_B_RESERVED_IP \
-  --fingerprint SHA256:PASTE_PHYSICALLY_VERIFIED_VALUE
+./scripts/cluster/cluster-status.sh --role standalone
+curl --fail http://127.0.0.1:8080/v1/models
 ```
 
-The pin helper refuses to overwrite an existing different trust record.
+The status command fails if 8080 is not IPv4-loopback-only, either RPC port is
+listening, or the optional tunnel remains active or enabled. The model response
+must advertise `kevinbellm-9b`.
 
-## 5. Download the exact model on A
+## 5. Connect and autostart KevinBeLLM
 
-The downloader resumes an interrupted transfer and checks the immutable
-revision, exact 17,984,872,928-byte size, and LFS SHA-256 before installing:
+For a fresh `.env`, `setup.sh` now selects:
+
+```dotenv
+INFERENCE_BACKEND=llamacpp
+INFERENCE_BASE_URL=http://127.0.0.1:8080
+DEFAULT_MODEL=kevinbellm-9b
+PREFERRED_MODELS=kevinbellm-9b,kevinbellm-27b
+CHAT_CONCURRENCY=1
+```
+
+`setup.sh` deliberately preserves an existing private `.env`. For an existing
+deployment, edit only those model/concurrency lines after making a protected
+copy. Even if an old `DEFAULT_MODEL=kevinbellm-27b` remains temporarily, the app
+falls back to the only model actually advertised by llama.cpp.
+
+Start and verify the local application:
 
 ```bash
-./scripts/cluster/download-model.sh
+./scripts/start.sh
+./scripts/status.sh
+./scripts/doctor.sh
 ```
 
-The preset is `model-presets/27b-q4_k_m.env.example`. The exact file is
-`bartowski/Qwen_Qwen3.5-27B-GGUF` revision
-`d7b113c40283f4d99f4eb0ec20d126ad653cc736`, file
-`Qwen_Qwen3.5-27B-Q4_K_M.gguf`, SHA-256
-`81657841d62f1821c748d0fea6c260b7d3508844fe4e9250253ef81c4e4d9edf`.
-
-## 6. Install boot-persistent user services
-
-Install the worker first. The first run creates a private example env and stops;
-edit it, read the warning above, set the exact acknowledgment, and rerun:
+Install local or authenticated-remote autostart only after its prerequisites
+are configured:
 
 ```bash
-# Machine B
-./scripts/cluster/install-services.sh \
-  --role worker --acknowledge-rpc-risk --enable-now
+./scripts/install-autostart.sh local
+# Or, after Cloudflare Access and the protected named Tunnel are ready:
+./scripts/install-autostart.sh remote
 ```
 
-Do the same on A. Its env also needs the reserved worker address, absolute model
-path, and stable model alias `kevinbellm-27b`:
+Both application modes call `scripts/inference.sh`, which uses the stable
+`kevinbellm-llama.service` name. On an encrypted cold boot, unlock Machine A,
+then confirm `loginctl show-user "$USER" -p Linger` and the service status.
 
-```bash
-# Machine A
-./scripts/cluster/install-services.sh \
-  --role coordinator --acknowledge-rpc-risk --enable-now
-```
-
-Installed unit names are:
-
-- A: `kevinbellm-rpc-tunnel.service` and `kevinbellm-llama.service`
-- B: `kevinbellm-rpc-worker.service`
-
-A does not treat a merely listening SSH forward as worker readiness. The tunnel
-unit runs pinned `llama-bench` device discovery through the forward and becomes
-active only after an `RPC0` device answers. If B is still booting, the tunnel
-keeps retrying. The worker and `llama-server` also retry transient failures
-without exhausting a short start-limit window.
-
-The llama defaults are 8192-token context, one parallel slot, zero prompt-cache
-RAM, layer split, automatic GPU layer count/fit, Q8 K/V caches, and Jinja chat
-templates. The Q8 caches conserve VRAM for the tight 27B fit. These settings are
-configurable only in A's private `coordinator.env`. Network bindings are
-hardcoded and cannot be overridden there. B enables upstream's persistent RPC
-tensor cache under `~/.cache/llama.cpp/rpc`; the first model load crosses SSH,
-while later identical loads can reuse that cache.
-
-## 7. Verify the boundary and use it from Windows
-
-```bash
-# Machine B
-./scripts/cluster/cluster-status.sh --role worker
-
-# Machine A
-./scripts/cluster/cluster-status.sh --role coordinator
-```
-
-The checks fail if 50052, 50053, or 8080 appears on anything except the expected
-IPv4 loopback address. From another LAN device, TCP/50052 must be unreachable.
-Do not "fix" RPC connectivity by binding it to `0.0.0.0` or forwarding it in
-the router.
-
-On Windows, keep this foreground PowerShell open while using the UI:
+For private LAN access from Windows:
 
 ```powershell
 .\scripts\windows\Open-KevinBeLLMForward.ps1
 ```
 
-It creates only a laptop-loopback forward at `http://127.0.0.1:3000` to A's
-app. Add `-ForwardLlamaApi` only for direct API diagnostics; that adds
-`http://127.0.0.1:18080` to A's llama API. It never forwards RPC port 50052.
+This opens only laptop-loopback port 3000. `-ForwardLlamaApi` is an explicit
+diagnostic option for laptop-loopback port 18080 and never forwards RPC.
 
-## Operational notes and alternatives
+## Optional 27B two-node profile
 
-- A power button plus physical disk unlock is sufficient; user services restart
-  after unlock because lingering is enabled. Check with `loginctl show-user
-  "$USER" -p Linger`.
-- Inspect logs with `journalctl --user -u UNIT_NAME -e`.
-- Stop the coordinator with `systemctl --user stop kevinbellm-llama.service
-  kevinbellm-rpc-tunnel.service`; stop B with `systemctl --user stop
-  kevinbellm-rpc-worker.service`.
-- Layer-split generation sends relatively small activations per token, but model
-  loading and prompt processing still pay for gigabit Ethernet. Combined VRAM
-  does not mean combined 400 GB/s bandwidth.
-- Putting both GPUs in one adequately powered/cooled PCIe system is the safer,
-  more mature no-purchase pooling method when the chassis, motherboard, and PSU
-  already support it. It removes the unauthenticated RPC network parser and SSH
-  hop. Keep this two-host RPC setup for the no-disassembly experiment and compare
-  it with `llama-bench` before deciding.
+Do not enable this merely because the second GPU exists. The standalone 9B
+profile is dramatically faster for interactive use and avoids the RPC parser.
+The two-node path is a capacity experiment for a larger dense model.
+
+### Mandatory RPC warning
+
+Upstream labels its RPC backend a fragile, insecure proof of concept without
+protocol authentication. It has had critical unauthenticated code-execution
+findings. An SSH tunnel limits who can reach the parser; it does not make that
+parser trusted. Treat access to either RPC loopback socket as code execution as
+the service user.
+
+Both private RPC role files must contain this exact deliberate acknowledgment,
+and installation also requires the command-line flag:
+
+```text
+ACKNOWLEDGE_LLAMA_RPC_RCE=YES_I_ACCEPT_UNAUTHENTICATED_RCE_RISK
+```
+
+If that risk is not accepted, stop here. Do not create the restricted account,
+start a worker, or expose any RPC address.
+
+### Retained workflow
+
+The complete host-key pinning, no-shell forwarding account, firewall, cache,
+benchmark, rollback, and troubleshooting instructions remain in
+[`docs/TWO_NODE_SETUP.md`](../../docs/TWO_NODE_SETUP.md). In summary:
+
+```bash
+# A: download the retained model without replacing the 9B file
+./scripts/cluster/download-model.sh --preset 27b-q4_k_m
+
+# B, only after the full tunnel setup and acknowledgment
+./scripts/cluster/install-services.sh \
+  --role worker --acknowledge-rpc-risk --enable-now
+
+# A, only after B is verified ready
+./scripts/cluster/install-services.sh \
+  --role coordinator --acknowledge-rpc-risk --enable-now
+```
+
+The coordinator installer renders the separately retained RPC template into the
+same `kevinbellm-llama.service` name, so the app endpoint stays stable. It never
+overwrites `standalone.env`, the 9B GGUF, `coordinator.env`, or tunnel keys.
+
+Return to the safe default on A with:
+
+```bash
+./scripts/cluster/install-services.sh --role standalone --enable-now
+./scripts/cluster/cluster-status.sh --role standalone
+```
+
+Then disable the worker on B if it was previously enabled:
+
+```bash
+systemctl --user disable --now kevinbellm-rpc-worker.service
+```
+
+The A installer disables its prior server, tunnel, and any locally installed
+worker before validating the standalone replacement. It reports—but never
+kills—an unknown process holding an RPC port. Model files and private profiles
+remain available for a later deliberate comparison.
+
+## Operations
+
+```bash
+systemctl --user status kevinbellm-llama.service --no-pager
+journalctl --user -u kevinbellm-llama.service -e
+systemctl --user restart kevinbellm-llama.service
+systemctl --user stop kevinbellm-llama.service
+```
+
+Keep model files, `.env` files, account databases, SSH material, tunnel tokens,
+logs, and chat data out of Git. The public repository contains only examples,
+immutable artifact identities, and deployment code.

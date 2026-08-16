@@ -36,7 +36,8 @@ def test_new_inference_default_is_llamacpp(monkeypatch) -> None:
     assert settings.inference_backend == "llamacpp"
     assert settings.inference_base_url == "http://127.0.0.1:8080"
     assert settings.ollama_url == settings.inference_base_url
-    assert settings.default_model == "kevinbellm-27b"
+    assert settings.default_model == "kevinbellm-9b"
+    assert settings.chat_concurrency == 1
 
 
 def test_llamacpp_inference_configuration(monkeypatch) -> None:

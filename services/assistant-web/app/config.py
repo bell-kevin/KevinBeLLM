@@ -129,7 +129,7 @@ def load_settings() -> Settings:
     model_default = (
         "qwen3.6:35b-a3b-q4_K_M"
         if inference_backend == "ollama"
-        else "kevinbellm-27b"
+        else "kevinbellm-9b"
     )
     default_model = os.getenv("DEFAULT_MODEL", model_default).strip()
     if not default_model or len(default_model) > 200:
@@ -155,7 +155,7 @@ def load_settings() -> Settings:
         session_ttl_seconds=_bounded_int("SESSION_TTL_HOURS", 24, 1, 24 * 30) * 3600,
         fetch_max_bytes=_bounded_int("FETCH_MAX_BYTES", 262_144, 65_536, 1_048_576),
         tool_result_max_chars=_bounded_int("TOOL_RESULT_MAX_CHARS", 12_000, 2_000, 30_000),
-        chat_concurrency=_bounded_int("CHAT_CONCURRENCY", 2, 1, 8),
+        chat_concurrency=_bounded_int("CHAT_CONCURRENCY", 1, 1, 8),
         chat_pending=_bounded_int("CHAT_PENDING", 2, 0, 16),
         chat_queue_timeout_seconds=_bounded_int("CHAT_QUEUE_TIMEOUT_SECONDS", 30, 1, 120),
         chat_deadline_seconds=_bounded_int("CHAT_DEADLINE_SECONDS", 1_200, 60, 3_600),

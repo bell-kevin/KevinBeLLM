@@ -12,6 +12,7 @@ StartLimitIntervalSec=0
 Type=simple
 Environment=CUDA_VISIBLE_DEVICES=0
 EnvironmentFile=@WORKER_ENV@
+UnsetEnvironment=XDG_CONFIG_HOME HOME
 # RPC is an upstream proof of concept with no authentication and a history of
 # critical RCE. The exact acknowledgment must remain in the private env file.
 ExecCondition=/usr/bin/test "${ACKNOWLEDGE_LLAMA_RPC_RCE}" = YES_I_ACCEPT_UNAUTHENTICATED_RCE_RISK
@@ -40,7 +41,7 @@ CapabilityBoundingSet=
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 SystemCallArchitectures=native
 ReadWritePaths=-%h/.cache/llama.cpp
-InaccessiblePaths=-%h/.ssh -%h/.gnupg -%h/.config
+InaccessiblePaths=-%h/.ssh -%h/.gnupg -%h/.config -/etc/llama.cpp
 
 [Install]
 WantedBy=default.target

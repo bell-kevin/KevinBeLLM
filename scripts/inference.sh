@@ -56,7 +56,7 @@ start_service() {
   if ! systemctl --user start "${unit_name}"; then
     echo "Could not start ${unit_name}." >&2
     if [[ "${backend}" == "llamacpp" ]]; then
-      echo "Install the coordinator services described in docs/TWO_NODE_SETUP.md." >&2
+      echo "Install the standalone Machine A service described in infra/cluster/README.md." >&2
     fi
     return 1
   fi
