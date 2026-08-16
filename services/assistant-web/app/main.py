@@ -450,9 +450,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request_id = _request_id(request)
         # Admission includes both executing and queued work, so streams cannot build
         # an unbounded waiter list behind the expensive local-model semaphore.
-        # The event loop cannot be interrupted between this counter check and
-        # acquire(), making it a non-blocking bounded admission operation.
-        if getattr(request.app.state.chat_admission, "_value", 0) <= 0:
+        # locked() is public API and true exactly when acquire() would block, and
+        # the event loop cannot be interrupted between this check and acquire(),
+        # making it a non-blocking bounded admission operation.
+        if request.app.state.chat_admission.locked():
             raise HTTPException(
                 status_code=503,
                 detail="The local model queue is full; try again shortly",
@@ -472,8 +473,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(status_code=502, detail=str(exc)) from exc
             raise
         session_token = request.state.session_token
-        # A single bounded answer (including worst-case source URLs) fits without
-        # letting a disconnected client strand the worker while it emits its sentinel.
+        # A single bounded answer fits without letting a disconnected client
+        # strand the worker while it emits its sentinel.
         queue: asyncio.Queue[tuple[str, dict[str, Any]] | None] = asyncio.Queue(maxsize=512)
 
         async def emit(event: str, payload: dict[str, Any]) -> None:
@@ -516,8 +517,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     request.app.state.chat_slots.release()
                 # The visible answer already streamed token by token while the
                 # model generated it. "done" carries the authoritative text so the
-                # client reconciles its live preview against post-processing such
-                # as appended source URLs or the assistant-character cap.
+                # client can reconcile its plain live preview against the final
+                # capped answer and render it as Markdown.
                 await emit(
                     "done",
                     {"model": body.model, "sources": sources, "content": content},

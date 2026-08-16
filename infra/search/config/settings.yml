@@ -1,18 +1,23 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Local SearXNG profile for browser and LLM tool use.
 # The base defaults come from the exact SearXNG image pinned in compose.yaml.
+# Bing is deliberately absent. Its scraper is the one most often served a
+# bot-check or consent interstitial instead of results, and SearXNG then
+# reports that interstitial's own links as ordinary hits. Neutral questions
+# came back citing microsoft.com, myaccount.microsoft.com, and other Microsoft
+# properties carrying Bing's "msockid" tracking parameter, which the assistant
+# then presented to the user as sources. Brave, DuckDuckGo, and Wikipedia cover
+# general web search without that failure mode.
 use_default_settings:
   engines:
     keep_only:
       # General web search
       - brave
       - duckduckgo
-      - bing
       - wikipedia
       # Current news
       - brave.news
       - duckduckgo news
-      - bing news
       - google news
       # Direct discovery of models, datasets, and spaces
       - huggingface
@@ -62,8 +67,6 @@ outgoing:
 
 # Engines marked disabled in SearXNG's defaults must be enabled explicitly.
 engines:
-  - name: bing
-    disabled: false
   - name: huggingface
     disabled: false
   - name: huggingface datasets

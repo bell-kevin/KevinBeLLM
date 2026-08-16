@@ -15,3 +15,6 @@
 
 # Native Windows helpers should retain Windows line endings.
 *.ps1 text eol=crlf
+
+# Node test modules are Linux-run entry points too.
+*.mjs text eol=lf
