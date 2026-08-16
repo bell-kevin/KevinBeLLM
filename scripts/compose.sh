@@ -49,7 +49,10 @@ if [[ "${engine}" == "podman" ]]; then
     exit 1
   fi
 
-  exec "${podman_compose_bin}" "${args[@]}"
+  # Podman 4.9 rejects keep-id user namespaces inside a Compose-created pod.
+  # These stacks use explicit loopback/host networking, so a shared pod is
+  # unnecessary and must remain disabled.
+  exec "${podman_compose_bin}" --in-pod=false "${args[@]}"
 fi
 
 exec docker compose "${args[@]}"
