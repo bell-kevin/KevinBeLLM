@@ -40,19 +40,16 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-ProtectHostname=true
-ProtectClock=true
 ProtectControlGroups=true
-ProtectKernelModules=true
 ProtectKernelTunables=true
-ProtectKernelLogs=true
 RestrictSUIDSGID=true
 RestrictRealtime=true
 RestrictNamespaces=true
 LockPersonality=true
-# User services already run without capabilities, and NoNewPrivileges prevents
-# gaining them. Ubuntu's user manager rejects CapabilityBoundingSet= here with
-# status 218/CAPABILITIES, so it must not be set in this unprivileged unit.
+# Ubuntu's user manager rejects capability-changing directives such as
+# CapabilityBoundingSet=, ProtectClock=, ProtectKernelModules=, and
+# ProtectKernelLogs= with status 218/CAPABILITIES. This service is already an
+# unprivileged user process, and NoNewPrivileges prevents gaining capabilities.
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 SystemCallArchitectures=native
 ReadWritePaths=-%h/.cache/llama.cpp

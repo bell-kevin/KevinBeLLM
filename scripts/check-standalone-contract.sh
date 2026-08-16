@@ -25,8 +25,8 @@ for user_unit in \
   "${rpc_unit}" \
   systemd/cluster/llama-rpc-worker.service.in \
   systemd/cluster/llama-rpc-tunnel.service.in; do
-  ! grep -q '^CapabilityBoundingSet=' "${user_unit}" || \
-    fail "${user_unit} uses CapabilityBoundingSet=, which fails in Ubuntu's user manager"
+  ! grep -Eq '^(CapabilityBoundingSet|ProtectClock|ProtectHostname|ProtectKernelModules|ProtectKernelLogs)=' "${user_unit}" || \
+    fail "${user_unit} uses a hardening directive unsupported by Ubuntu's user manager"
 done
 
 [[ "${standalone_exec}" == 'ExecStart=/usr/bin/env -i CUDA_VISIBLE_DEVICES=0 '* ]] || fail 'standalone server does not launch with a cleared environment'
