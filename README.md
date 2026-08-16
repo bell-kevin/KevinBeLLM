@@ -1,5 +1,9 @@
 # KevinBeLLM: private local AI
 
+https://bell-kevin.github.io/KevinBeLLM/
+
+https://assistant.kevin-bell.com/
+
 KevinBeLLM is an AGPL-licensed, self-hosted AI workspace served from owned
 Ubuntu hardware. This repository continues the original proof of concept at
 its existing public URL. The everyday architecture is deliberately simple:
@@ -180,3 +184,7 @@ When the modified application is offered over a network, publish the
 corresponding source and set `SOURCE_URL` to this exact public repository.
 Never commit private environment files, passwords, SSH keys, Cloudflare tunnel
 credentials, model files, account databases, logs, or chat exports.
+
+https://bell-kevin.github.io/KevinBeLLM/
+
+https://assistant.kevin-bell.com/
