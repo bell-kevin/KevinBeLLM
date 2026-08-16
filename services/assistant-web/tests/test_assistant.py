@@ -328,6 +328,64 @@ def test_llamacpp_tool_call_round_trip(
     }
 
 
+def test_sources_stay_structured_and_are_never_appended_to_the_answer(
+    monkeypatch, tmp_path
+) -> None:
+    """The browser renders its own citation card from the structured list.
+
+    Appending the same URLs to the answer text duplicated that card and
+    promoted the results the model had deliberately declined to use.
+    """
+    settings = _settings(tmp_path)
+    answer = "Ben Carson is a neurosurgeon; see https://en.wikipedia.org/wiki/Ben_Carson."
+
+    async def fake_chat_once(
+        _client, _settings, _model, _messages, *, include_tools,
+        on_delta=None, on_reasoning=None, reasoning=False,
+    ):
+        if include_tools:
+            return {
+                "content": "",
+                "tool_calls": [
+                    {"function": {"name": "web_search", "arguments": {"query": "x"}}}
+                ],
+            }
+        return {"content": answer}
+
+    async def fake_tool_run(_self, _name, _arguments):
+        return ToolExecution(
+            "{}",
+            (
+                {"title": "Ben Carson - Wikipedia", "url": "https://en.wikipedia.org/wiki/Ben_Carson"},
+                {"title": "Dermatologist in Pasadena", "url": "https://example.invalid/derm"},
+            ),
+        )
+
+    monkeypatch.setattr("app.assistant._chat_once", fake_chat_once)
+    monkeypatch.setattr("app.assistant.ToolRunner.run", fake_tool_run)
+
+    async def run():
+        async with httpx.AsyncClient() as client:
+            return await run_chat(
+                client,
+                settings,
+                "test-model",
+                [{"role": "user", "content": "who is dr ben carson"}],
+                lambda _event, _payload: asyncio.sleep(0),
+            )
+
+    content, sources = asyncio.run(run())
+    assert content == answer
+    assert "Sources:" not in content
+    # The uncited result must not be smuggled into the visible answer, but it
+    # still reaches the browser as structured data.
+    assert "example.invalid" not in content
+    assert [source["url"] for source in sources] == [
+        "https://en.wikipedia.org/wiki/Ben_Carson",
+        "https://example.invalid/derm",
+    ]
+
+
 def test_reasoning_is_opt_in_and_never_enters_the_answer(tmp_path) -> None:
     """Fast mode suppresses thinking; reasoning mode streams it on its own channel."""
     settings = _settings(tmp_path, backend="llamacpp")
