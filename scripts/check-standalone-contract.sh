@@ -91,6 +91,8 @@ require_text scripts/cluster/install-services.sh 'for rpc_port in 50052 50053; d
 require_text scripts/cluster/install-services.sh 'ss -H -ltn "sport = :${rpc_port}"'
 require_text scripts/cluster/install-services.sh 'Refusing standalone install while an RPC port remains open.'
 require_text scripts/cluster/install-services.sh 'systemd/cluster/llama-server-rpc.service.in'
+require_text scripts/cluster/install-services.sh 'linger_enabled="$(loginctl show-user "${USER}" -p Linger --value 2>/dev/null || true)"'
+require_text scripts/cluster/install-services.sh 'sudo loginctl enable-linger "${USER}"'
 
 shutdown_line="$(grep -n -m1 'for unsafe_unit in' scripts/cluster/install-services.sh | cut -d: -f1)"
 env_check_line="$(grep -n -m1 'if \[\[ -z "${env_file}" \]\]' scripts/cluster/install-services.sh | cut -d: -f1)"

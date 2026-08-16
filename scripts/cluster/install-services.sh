@@ -85,7 +85,11 @@ done
 cluster_require_ubuntu
 cluster_require_non_root
 cluster_require_command systemctl
-cluster_require_command sudo
+cluster_require_command loginctl
+linger_enabled="$(loginctl show-user "${USER}" -p Linger --value 2>/dev/null || true)"
+if [[ "${linger_enabled}" != 'yes' ]]; then
+  cluster_require_command sudo
+fi
 [[ "${role}" == 'standalone' || "${role}" == 'coordinator' || "${role}" == 'worker' ]] || \
   cluster_die "--role must be standalone, coordinator, or worker."
 if [[ "${role}" == 'standalone' ]]; then
@@ -269,7 +273,9 @@ else
   units+=(kevinbellm-rpc-tunnel.service kevinbellm-llama.service)
 fi
 
-sudo loginctl enable-linger "${USER}"
+if [[ "${linger_enabled}" != 'yes' ]]; then
+  sudo loginctl enable-linger "${USER}"
+fi
 systemctl --user daemon-reload
 systemctl --user enable "${units[@]}"
 if ((enable_now || restart_active)); then
