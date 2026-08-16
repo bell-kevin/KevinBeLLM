@@ -375,15 +375,22 @@ cmake -S <llama.cpp-source> -B <build-dir> \
   -DGGML_CUDA=ON \
   -DGGML_RPC=ON \
   -DGGML_NATIVE=OFF \
+  -DGGML_AVX=OFF \
+  -DGGML_AVX2=OFF \
+  -DGGML_BMI2=OFF \
+  -DGGML_FMA=OFF \
+  -DGGML_F16C=OFF \
   -DBUILD_SHARED_LIBS=OFF \
   -DCMAKE_CUDA_ARCHITECTURES=86
 cmake --build <build-dir> --config Release -j
 ```
 
 Those flags follow the pinned [llama.cpp CUDA/RPC build instructions][llama-rpc].
-At `b10451` the worker binary is named `ggml-rpc-server`, not `rpc-server`.
-Build separately on each host rather than copying a host-native binary between
-possibly different CPUs.
+The explicit CPU feature disables keep one SSE4.2-compatible baseline runnable
+on these pre-AVX/AVX2 CPUs; the performance-critical model work remains on
+CUDA. At `b10451` the worker binary is named `ggml-rpc-server`, not
+`rpc-server`. Build separately on each host rather than copying a host-native
+binary between possibly different CPUs.
 
 Verify both installations before continuing:
 

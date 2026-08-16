@@ -118,10 +118,17 @@ GGML_CUDA=ON
 GGML_RPC=ON
 CMAKE_CUDA_ARCHITECTURES=86
 GGML_NATIVE=OFF
+GGML_AVX=OFF
+GGML_AVX2=OFF
+GGML_BMI2=OFF
+GGML_FMA=OFF
+GGML_F16C=OFF
 ```
 
-The remaining CMake flags are recorded in the build-spec file. Run the same
-script after a failed build; CMake and Ninja resume idempotently.
+The explicit CPU baseline keeps the same binaries runnable on the older
+pre-AVX/AVX2 host CPUs; inference remains CUDA-backed. The remaining CMake
+flags are recorded in the build-spec file. Run the same script after a failed
+build; CMake and Ninja resume idempotently.
 
 ## 4. Establish the restricted A-to-B tunnel identity
 
