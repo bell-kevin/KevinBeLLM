@@ -28,13 +28,19 @@ while (( "$#" )); do
 done
 
 if [[ "${engine}" == "podman" ]]; then
-  if ! command -v podman-compose >/dev/null 2>&1; then
+  podman_compose_bin="$(command -v podman-compose 2>/dev/null || true)"
+  if [[ -z "${podman_compose_bin}" && -x "${HOME}/.local/bin/podman-compose" ]]; then
+    # pipx installs here by default, but non-interactive SSH and systemd user
+    # managers do not necessarily include ~/.local/bin in PATH.
+    podman_compose_bin="${HOME}/.local/bin/podman-compose"
+  fi
+  if [[ -z "${podman_compose_bin}" ]]; then
     echo "Podman is installed, but podman-compose is unavailable." >&2
     echo "Install podman-compose >= 1.4.1; implicit providers are not used." >&2
     exit 1
   fi
 
-  compose_version="$(podman-compose --version 2>/dev/null | sed -nE 's/.*[^0-9]([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -n 1)"
+  compose_version="$("${podman_compose_bin}" --version 2>/dev/null | sed -nE 's/.*[^0-9]([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -n 1)"
   minimum_version="1.4.1"
   if [[ -z "${compose_version}" ]] || \
      [[ "$(printf '%s\n' "${minimum_version}" "${compose_version}" | sort -V | head -n 1)" != "${minimum_version}" ]]; then
@@ -43,7 +49,7 @@ if [[ "${engine}" == "podman" ]]; then
     exit 1
   fi
 
-  exec podman-compose "${args[@]}"
+  exec "${podman_compose_bin}" "${args[@]}"
 fi
 
 exec docker compose "${args[@]}"

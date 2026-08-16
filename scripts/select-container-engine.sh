@@ -16,11 +16,15 @@ if ! command -v "${engine}" >/dev/null 2>&1; then
 fi
 
 if [[ "${engine}" == "podman" ]]; then
-  if ! command -v podman-compose >/dev/null 2>&1; then
+  podman_compose_bin="$(command -v podman-compose 2>/dev/null || true)"
+  if [[ -z "${podman_compose_bin}" && -x "${HOME}/.local/bin/podman-compose" ]]; then
+    podman_compose_bin="${HOME}/.local/bin/podman-compose"
+  fi
+  if [[ -z "${podman_compose_bin}" ]]; then
     echo "podman-compose >= 1.4.1 must be installed before selecting Podman." >&2
     exit 1
   fi
-  compose_version="$(podman-compose --version 2>/dev/null | sed -nE 's/.*[^0-9]([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -n 1)"
+  compose_version="$("${podman_compose_bin}" --version 2>/dev/null | sed -nE 's/.*[^0-9]([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -n 1)"
   minimum_version="1.4.1"
   if [[ -z "${compose_version}" ]] || \
      [[ "$(printf '%s\n' "${minimum_version}" "${compose_version}" | sort -V | head -n 1)" != "${minimum_version}" ]]; then
