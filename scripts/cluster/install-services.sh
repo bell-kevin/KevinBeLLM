@@ -109,8 +109,20 @@ rpc_bin="${llama_dir}/build/bin/ggml-rpc-server"
 bench_bin="${llama_dir}/build/bin/llama-bench"
 [[ -x "${server_bin}" && -x "${rpc_bin}" && -x "${bench_bin}" ]] || \
   cluster_die "Pinned build is incomplete; run install-llama-cpp.sh."
-grep -qx 'commit=10bf611e533d81f739128304991c5e133c6aebd8' "${llama_dir}/KEVINBELLM_BUILD_SPEC.txt" || \
-  cluster_die "Build spec does not prove the pinned b10451 commit."
+for required_build_spec in \
+  'commit=10bf611e533d81f739128304991c5e133c6aebd8' \
+  'CMAKE_CUDA_ARCHITECTURES=86' \
+  'GGML_CUDA=ON' \
+  'GGML_NATIVE=OFF' \
+  'GGML_RPC=ON' \
+  'GGML_AVX=OFF' \
+  'GGML_AVX2=OFF' \
+  'GGML_BMI2=OFF' \
+  'GGML_FMA=OFF' \
+  'GGML_F16C=OFF'; do
+  grep -qxF "${required_build_spec}" "${llama_dir}/KEVINBELLM_BUILD_SPEC.txt" || \
+    cluster_die "Build spec is missing required setting: ${required_build_spec}"
+done
 
 render_unit() {
   local template="$1"
