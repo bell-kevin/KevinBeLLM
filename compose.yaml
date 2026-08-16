@@ -26,7 +26,7 @@ services:
       CHAT_DEADLINE_SECONDS: "${CHAT_DEADLINE_SECONDS:-1200}"
       FETCH_DEADLINE_SECONDS: "${FETCH_DEADLINE_SECONDS:-30}"
       DATABASE_CONCURRENCY: "${DATABASE_CONCURRENCY:-8}"
-      SOURCE_URL: "${SOURCE_URL:-https://github.com/bell-kevin/ASUS-KevinBeLLM}"
+      SOURCE_URL: "${SOURCE_URL:-https://github.com/bell-kevin/KevinBeLLM}"
     volumes:
       - assistant-data:/data
     depends_on:

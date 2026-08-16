@@ -18,7 +18,7 @@ import httpx
 from .config import Settings
 
 
-USER_AGENT = "KevinBeLLM/1.0 (+https://github.com/bell-kevin/ASUS-KevinBeLLM)"
+USER_AGENT = "KevinBeLLM/1.0 (+https://github.com/bell-kevin/KevinBeLLM)"
 MAX_JSON_BYTES = 1_048_576
 MAX_REDIRECTS = 3
 

@@ -140,7 +140,7 @@ def load_settings() -> Settings:
         public_origin=public_origin,
         secure_cookie=parsed_public.scheme == "https",
         source_url=_http_url(
-            "SOURCE_URL", "https://github.com/bell-kevin/ASUS-KevinBeLLM"
+            "SOURCE_URL", "https://github.com/bell-kevin/KevinBeLLM"
         ),
         # Keep this alias populated for older code that still reads ollama_url.
         ollama_url=inference_base_url,

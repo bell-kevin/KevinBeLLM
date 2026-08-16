@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 [Unit]
 Description=KevinBeLLM authenticated remote browser assistant
-Documentation=https://github.com/bell-kevin/ASUS-KevinBeLLM
+Documentation=https://github.com/bell-kevin/KevinBeLLM
 Wants=network-online.target
 After=network-online.target
 StartLimitIntervalSec=0
