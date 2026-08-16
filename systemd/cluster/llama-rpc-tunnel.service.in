@@ -34,7 +34,9 @@ RestrictSUIDSGID=true
 RestrictRealtime=true
 RestrictNamespaces=true
 LockPersonality=true
-CapabilityBoundingSet=
+# User services already run without capabilities, and NoNewPrivileges prevents
+# gaining them. Ubuntu's user manager rejects CapabilityBoundingSet= here with
+# status 218/CAPABILITIES, so it must not be set in this unprivileged unit.
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 SystemCallArchitectures=native
 

@@ -20,6 +20,15 @@ rpc_unit='systemd/cluster/llama-server-rpc.service.in'
 standalone_exec="$(grep '^ExecStart=' "${standalone_unit}")"
 rpc_exec="$(grep '^ExecStart=' "${rpc_unit}")"
 
+for user_unit in \
+  "${standalone_unit}" \
+  "${rpc_unit}" \
+  systemd/cluster/llama-rpc-worker.service.in \
+  systemd/cluster/llama-rpc-tunnel.service.in; do
+  ! grep -q '^CapabilityBoundingSet=' "${user_unit}" || \
+    fail "${user_unit} uses CapabilityBoundingSet=, which fails in Ubuntu's user manager"
+done
+
 [[ "${standalone_exec}" == 'ExecStart=/usr/bin/env -i CUDA_VISIBLE_DEVICES=0 '* ]] || fail 'standalone server does not launch with a cleared environment'
 [[ "${standalone_exec}" != *'--rpc'* ]] || fail 'standalone ExecStart contains --rpc'
 [[ "${standalone_exec}" == *'--host 127.0.0.1 --port 8080'* ]] || fail 'standalone endpoint is not fixed to IPv4 loopback'
