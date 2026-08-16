@@ -23,6 +23,12 @@ MAX_ASSISTANT_CHARS = 50_000
 EmitEvent = Callable[[str, dict[str, Any]], Awaitable[None]]
 OnDelta = Callable[[str], Awaitable[None]]
 
+# Fast mode answers directly. Reasoning mode needs a much larger budget: this
+# model is an unusually verbose reasoner and will otherwise spend the whole
+# allowance thinking and never emit a visible answer. Both fit the 32k context.
+ANSWER_MAX_TOKENS = 2_048
+REASONING_MAX_TOKENS = 8_192
+
 
 class AssistantError(Exception):
     """A safe assistant/upstream failure that may be shown to the signed-in user."""
@@ -115,9 +121,12 @@ async def _stream_chat_completion(
     *,
     timeout: float,
     on_delta: OnDelta,
+    on_reasoning: OnDelta | None = None,
 ) -> dict[str, Any]:
     """Read an SSE chat completion, forwarding visible text as it arrives.
 
+    Reasoning tokens travel on a separate channel so the browser can show
+    progress without ever mixing chain-of-thought into the stored answer.
     Returns the same message shape as the buffered path so the bounded tool
     loop does not need to know which transport produced it.
     """
@@ -164,6 +173,9 @@ async def _stream_chat_completion(
                     if isinstance(piece, str) and piece:
                         content_parts.append(piece)
                         await on_delta(piece)
+                    thought = delta.get("reasoning_content")
+                    if isinstance(thought, str) and thought and on_reasoning:
+                        await on_reasoning(thought)
                     raw_calls = delta.get("tool_calls")
                     if isinstance(raw_calls, list) and raw_calls:
                         _merge_tool_call_deltas(tool_calls, raw_calls)
@@ -400,6 +412,8 @@ async def _chat_once(
     *,
     include_tools: bool,
     on_delta: OnDelta | None = None,
+    on_reasoning: OnDelta | None = None,
+    reasoning: bool = False,
 ) -> dict[str, Any]:
     backend = _inference_backend(settings)
     base_url = _inference_base_url(settings)
@@ -412,12 +426,14 @@ async def _chat_once(
             "messages": messages,
             "stream": False,
             # Qwen's thinking mode is enabled by default. On this hardware it can
-            # consume the whole prediction budget without producing visible text.
-            # Keep the browser's bounded tool loop in visible-answer mode.
-            "think": False,
+            # consume the whole prediction budget without producing visible text,
+            # so it stays opt-in per request.
+            "think": reasoning,
             "options": {
                 "num_ctx": settings.ollama_context_length,
-                "num_predict": 2_048,
+                "num_predict": (
+                    REASONING_MAX_TOKENS if reasoning else ANSWER_MAX_TOKENS
+                ),
                 "temperature": 0.3,
             },
         }
@@ -427,12 +443,13 @@ async def _chat_once(
             "model": model,
             "messages": _openai_messages(messages),
             "stream": streaming,
-            "max_tokens": 2_048,
+            "max_tokens": REASONING_MAX_TOKENS if reasoning else ANSWER_MAX_TOKENS,
             "temperature": 0.3,
-            "reasoning_effort": "none",
-            "chat_template_kwargs": {"enable_thinking": False},
             "parse_tool_calls": True,
         }
+        if not reasoning:
+            body["reasoning_effort"] = "none"
+            body["chat_template_kwargs"] = {"enable_thinking": False}
         endpoint = f"{base_url}/v1/chat/completions"
     if include_tools:
         body["tools"] = TOOL_DEFINITIONS
@@ -440,7 +457,12 @@ async def _chat_once(
             body["tool_choice"] = "auto"
     if streaming and on_delta is not None:
         return await _stream_chat_completion(
-            client, endpoint, body, timeout=600.0, on_delta=on_delta
+            client,
+            endpoint,
+            body,
+            timeout=600.0,
+            on_delta=on_delta,
+            on_reasoning=on_reasoning,
         )
     payload = await _ollama_json(
         client,
@@ -468,6 +490,7 @@ async def run_chat(
     model: str,
     user_messages: list[dict[str, str]],
     emit: EmitEvent,
+    reasoning: bool = False,
 ) -> tuple[str, list[dict[str, str]]]:
     conversation: list[dict[str, Any]] = [
         {"role": "system", "content": _system_prompt()},
@@ -493,6 +516,23 @@ async def run_chat(
         streamed_any = True
         await emit("delta", {"content": allowed})
 
+    reasoning_chars = 0
+
+    async def on_reasoning(piece: str) -> None:
+        # Chain-of-thought is progress feedback only: it is never stored, never
+        # fed back to the model, and is bounded so a runaway think loop cannot
+        # flood the browser.
+        nonlocal reasoning_chars
+        allowed = piece[: max(0, MAX_ASSISTANT_CHARS - reasoning_chars)]
+        if not allowed:
+            return
+        reasoning_chars += len(allowed)
+        await emit("reasoning", {"content": allowed})
+
+    # Only wired up in reasoning mode: a model that leaks reasoning_content
+    # despite suppression must not pop a "Thinking" box in fast mode.
+    reasoning_sink = on_reasoning if reasoning else None
+
     async def begin_round() -> None:
         # A round that ends in tool calls may already have streamed a preamble.
         # Clear it so the next round's answer does not append to dead text.
@@ -511,6 +551,8 @@ async def run_chat(
             conversation,
             include_tools=True,
             on_delta=on_delta,
+            on_reasoning=reasoning_sink,
+            reasoning=reasoning,
         )
         raw_content = message.get("content")
         content = raw_content if isinstance(raw_content, str) else ""
@@ -535,6 +577,8 @@ async def run_chat(
                     conversation,
                     include_tools=False,
                     on_delta=on_delta,
+                    on_reasoning=reasoning_sink,
+                    reasoning=reasoning,
                 )
                 raw_content = message.get("content")
                 final_content = raw_content if isinstance(raw_content, str) else ""
@@ -583,6 +627,8 @@ async def run_chat(
             conversation,
             include_tools=False,
             on_delta=on_delta,
+            on_reasoning=reasoning_sink,
+            reasoning=reasoning,
         )
         raw_content = message.get("content")
         final_content = raw_content if isinstance(raw_content, str) else ""

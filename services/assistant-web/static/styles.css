@@ -1893,3 +1893,101 @@ ul {
     border: 1px solid currentColor;
   }
 }
+
+/* Extended-thinking toggle and the streamed reasoning trace. */
+.reasoning-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  align-self: flex-end;
+  margin-bottom: 2px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.reasoning-toggle:hover {
+  color: var(--text-soft);
+  border-color: var(--line-strong);
+}
+
+.reasoning-toggle-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--faint);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.reasoning-toggle.is-on {
+  color: var(--mint-bright);
+  border-color: var(--line-strong);
+  background: rgba(121, 239, 184, 0.1);
+}
+
+.reasoning-toggle.is-on .reasoning-toggle-dot {
+  background: var(--mint);
+  box-shadow: 0 0 8px rgba(121, 239, 184, 0.7);
+}
+
+.reasoning-toggle:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 2px;
+}
+
+.composer-note {
+  color: var(--amber);
+}
+
+.reasoning-block {
+  margin: 0 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+  font-size: 0.88rem;
+}
+
+.reasoning-summary {
+  padding: 8px 12px;
+  color: var(--muted);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.reasoning-summary::-webkit-details-marker {
+  display: none;
+}
+
+.reasoning-summary::before {
+  content: "▸ ";
+  color: var(--faint);
+}
+
+.reasoning-block[open] .reasoning-summary::before {
+  content: "▾ ";
+}
+
+.reasoning-body {
+  padding: 0 12px 10px;
+  color: var(--faint);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reasoning-toggle,
+  .reasoning-toggle-dot {
+    transition: none;
+  }
+}

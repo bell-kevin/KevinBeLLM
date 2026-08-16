@@ -51,7 +51,8 @@ def test_model_cannot_amplify_tool_calls(monkeypatch, tmp_path) -> None:
     model_requests: list[list[dict]] = []
 
     async def fake_chat_once(
-        _client, _settings, _model, messages, *, include_tools, on_delta=None
+        _client, _settings, _model, messages, *, include_tools,
+        on_delta=None, on_reasoning=None, reasoning=False,
     ):
         model_requests.append(messages.copy())
         if len(model_requests) == 1:
@@ -325,3 +326,65 @@ def test_llamacpp_tool_call_round_trip(
         "content": '{"results":[]}',
         "tool_call_id": expected_id,
     }
+
+
+def test_reasoning_is_opt_in_and_never_enters_the_answer(tmp_path) -> None:
+    """Fast mode suppresses thinking; reasoning mode streams it on its own channel."""
+    settings = _settings(tmp_path, backend="llamacpp")
+    requests: list[dict] = []
+
+    def _sse(*chunks: dict) -> bytes:
+        lines = [f"data: {json.dumps(chunk)}\n\n" for chunk in chunks]
+        lines.append("data: [DONE]\n\n")
+        return "".join(lines).encode()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "text/event-stream"},
+            content=_sse(
+                {"choices": [{"index": 0, "delta": {"reasoning_content": "weighing "}}]},
+                {"choices": [{"index": 0, "delta": {"reasoning_content": "options"}}]},
+                {"choices": [{"index": 0, "delta": {"content": "Paris"}}]},
+            ),
+        )
+
+    def run(reasoning: bool):
+        events: list[tuple[str, dict]] = []
+
+        async def record(event: str, payload: dict) -> None:
+            events.append((event, payload))
+
+        async def go():
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(handler)
+            ) as client:
+                return await run_chat(
+                    client, settings, "test-model",
+                    [{"role": "user", "content": "capital of France?"}],
+                    record, reasoning,
+                )
+
+        content, _sources = asyncio.run(go())
+        return content, events
+
+    # Fast mode: thinking explicitly suppressed and the budget stays small.
+    content, events = run(False)
+    assert content == "Paris"
+    assert requests[-1]["reasoning_effort"] == "none"
+    assert requests[-1]["chat_template_kwargs"] == {"enable_thinking": False}
+    assert requests[-1]["max_tokens"] == 2_048
+    # Even though the server sent reasoning, fast mode must not surface it.
+    assert not [event for event, _ in events if event == "reasoning"]
+
+    # Reasoning mode: suppression removed and the budget raised.
+    content, events = run(True)
+    assert content == "Paris"
+    assert "reasoning_effort" not in requests[-1]
+    assert "chat_template_kwargs" not in requests[-1]
+    assert requests[-1]["max_tokens"] == 8_192
+    thoughts = [p["content"] for e, p in events if e == "reasoning"]
+    assert thoughts == ["weighing ", "options"]
+    # The stored answer must contain no chain-of-thought.
+    assert "weighing" not in content

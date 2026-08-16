@@ -205,6 +205,18 @@
                 aria-describedby="composerHint"
                 required
               ></textarea>
+              <button
+                class="reasoning-toggle"
+                id="reasoningToggle"
+                type="button"
+                role="switch"
+                aria-checked="false"
+                aria-label="Extended thinking"
+                title="Extended thinking: slower to start, better on hard questions"
+              >
+                <span class="reasoning-toggle-dot" aria-hidden="true"></span>
+                <span class="reasoning-toggle-text">Think</span>
+              </button>
               <button class="send-button" id="sendButton" type="submit" aria-label="Send message" disabled>
                 <span class="send-arrow" aria-hidden="true">↑</span>
               </button>
@@ -215,6 +227,7 @@
             <div class="composer-footnote" id="composerHint">
               <span>Enter to send · Shift+Enter for a new line</span>
               <span>Plain-text output · verify important answers</span>
+              <span class="composer-note" id="composerNote" hidden></span>
             </div>
           </div>
         </main>

@@ -51,7 +51,7 @@ def test_login_session_csrf_models_and_chat(tmp_path, monkeypatch) -> None:
             "default_model": "recommended:latest",
         }
 
-    async def fake_chat(_client, _settings, model, messages, emit):
+    async def fake_chat(_client, _settings, model, messages, emit, reasoning=False):
         assert messages[-1] == {"role": "user", "content": "hello"}
         await emit("status", {"message": "Testing"})
         # run_chat now streams visible text as the model produces it; main.py no

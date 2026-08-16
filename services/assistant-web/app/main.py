@@ -148,6 +148,9 @@ class ChatBody(BaseModel):
 
     model: str = Field(min_length=1, max_length=200)
     messages: list[ChatMessage] = Field(min_length=1, max_length=32)
+    # Opt-in per request. Thinking measurably raises answer quality but costs
+    # hundreds to thousands of extra tokens before any visible text appears.
+    reasoning: bool = False
 
     @model_validator(mode="after")
     def validate_history(self) -> "ChatBody":
@@ -507,6 +510,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             body.model,
                             [message.model_dump() for message in body.messages],
                             emit,
+                            body.reasoning,
                         )
                 finally:
                     request.app.state.chat_slots.release()
