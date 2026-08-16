@@ -45,8 +45,13 @@ compute buffers, KV cache, and display use consume part of each card.
 The default model installer pins `Qwen_Qwen3.5-9B-Q6_K.gguf` at immutable
 revision `182be2fd6c7bc44887d88a91cb03ff009cc9f549`, verifies its exact
 7,958,818,848-byte size and SHA-256, and refuses mismatched files. On Machine A,
-the tuned MTP configuration sustains roughly 62-66 generation tokens/second
-across prompt lengths from 130 to 23,000 tokens, retains about 3.6 GiB of free
+the tuned MTP configuration generates roughly 53-69 tokens/second at the
+deployed sampling temperature, with a median near 62. What sets that spread is
+how predictable the output is, not how long it is: code and arithmetic draft
+well and reach 68-69 tokens/second, while discursive technical prose and
+creative writing fall to 53-57. Longer answers are not slower, and longer
+prompts are nearly free out to about 7,500 tokens. The configuration retains
+about 3.2 GiB of free
 VRAM at a 32,768-token context, and passes a coherent OpenAI-compatible
 tool-call check. Time to first token is about 0.3 s for a short prompt and
 scales with prompt length at a prefill rate of roughly 1,350 tokens/second.
