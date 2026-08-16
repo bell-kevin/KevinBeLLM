@@ -335,7 +335,7 @@ terminal, review `sudo ufw status verbose` and `sudo ufw status numbered`, then
 remove only a broad rule you have positively identified; do not close the
 original session first.
 
-## Stage 2: prepare identical llama.cpp builds
+## Stage 2: prepare matching llama.cpp CUDA builds
 
 Use the same revision on both hosts. This project pins llama.cpp build tag
 `b10451`, currently commit `10bf611e533d81f739128304991c5e133c6aebd8`.
@@ -393,6 +393,9 @@ on these pre-AVX/AVX2 CPUs; the performance-critical model work remains on
 CUDA. At `b10451` the worker binary is named `ggml-rpc-server`, not
 `rpc-server`. Build separately on each host rather than copying a host-native
 binary between possibly different CPUs.
+Because the builds are compiled separately, their executable hashes and sizes
+need not be byte-for-byte identical. The compatibility requirements are the
+same pinned source commit and the same recorded build options on both hosts.
 Both UI flags are deliberate. At this revision, disabling the UI build alone
 still allows a prebuilt UI download; KevinBeLLM uses the server API and does
 not need those unpinned browser assets.

@@ -36,7 +36,8 @@ through KevinBeLLM's own login.
 | Machine B, worker | NVIDIA GeForce RTX 3070 | 8 GiB | Restricted llama.cpp RPC worker |
 
 Both GPUs are Ampere devices with CUDA compute capability 8.6, so they use the
-same pinned CUDA/llama.cpp build. Their 20 GiB of nominal VRAM remains two
+same pinned llama.cpp source revision and CUDA build configuration. Their 20
+GiB of nominal VRAM remains two
 separate memory pools: bandwidth does not add together, and CUDA contexts,
 compute buffers, KV cache, and display use consume part of each card.
 
