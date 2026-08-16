@@ -658,7 +658,8 @@ rootless Podman and the pinned PyPI release as A's normal login user, then
 select it explicitly:
 
 ```bash
-sudo apt-get install -y --no-install-recommends podman pipx
+sudo apt-get install -y --no-install-recommends \
+  podman pipx uidmap slirp4netns fuse-overlayfs
 pipx install 'podman-compose==1.6.0'
 export PATH="${HOME}/.local/bin:${PATH}"
 podman info
