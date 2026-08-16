@@ -32,8 +32,9 @@ to every request and would make a sleeping laptop take the whole service down.
 
 Machine A is the sensible desktop coordinator because its 12 GiB card gives
 the local server more headroom; Machine B is a narrowly scoped 8 GiB worker.
-Either Ampere card can run the same CUDA build: NVIDIA lists the RTX 3060 and
-RTX 3070 as compute capability 8.6. The cards are still separate devices, not a
+Both Ampere cards support the same pinned source revision and CUDA build
+configuration: NVIDIA lists the RTX 3060 and RTX 3070 as compute capability
+8.6. The cards are still separate devices, not a
 single 20 GiB CUDA allocation. llama.cpp places tensors and KV cache across
 local and RPC devices; it does not turn their bandwidth into one 400 GB/s memory
 bus. See the official [NVIDIA compute-capability table][nvidia-cc], [EVGA 3060

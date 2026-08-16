@@ -72,7 +72,7 @@ installation. It covers:
 - physical inventory and encrypted-boot behavior;
 - stable router DHCP reservations without public port forwarding;
 - fingerprint-verified, key-only SSH from Windows;
-- the pinned legacy-CPU-safe CUDA/llama.cpp build on both hosts;
+- the matching pinned legacy-CPU-safe llama.cpp source and CUDA configuration;
 - the restricted Machine A-to-B tunnel and systemd user services;
 - checksum-verified model installation;
 - KevinBeLLM startup, validation, benchmarking, and rollback;
