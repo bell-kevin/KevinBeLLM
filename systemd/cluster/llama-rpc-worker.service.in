@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[Unit]
+Description=KevinBeLLM loopback-only llama.cpp RPC worker
+Documentation=https://github.com/ggml-org/llama.cpp/tree/b10451/tools/rpc
+Wants=network-online.target
+After=network-online.target
+# Recover automatically after a transient driver/device startup failure.
+# A failed risk-acknowledgment ExecCondition is skipped and does not loop.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Environment=CUDA_VISIBLE_DEVICES=0
+EnvironmentFile=@WORKER_ENV@
+# RPC is an upstream proof of concept with no authentication and a history of
+# critical RCE. The exact acknowledgment must remain in the private env file.
+ExecCondition=/usr/bin/test "${ACKNOWLEDGE_LLAMA_RPC_RCE}" = YES_I_ACCEPT_UNAUTHENTICATED_RCE_RISK
+# These endpoint arguments are intentionally not configurable.
+ExecStart="@RPC_SERVER_BIN@" --host 127.0.0.1 --port 50052 --device CUDA0 --cache
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=30
+UMask=0077
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectHostname=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectKernelLogs=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+ReadWritePaths=-%h/.cache/llama.cpp
+InaccessiblePaths=-%h/.ssh -%h/.gnupg -%h/.config
+
+[Install]
+WantedBy=default.target

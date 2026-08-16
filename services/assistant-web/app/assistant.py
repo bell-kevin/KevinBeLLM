@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Ollama model discovery and the bounded native tool-calling loop."""
+"""Local model discovery and the bounded native tool-calling loop."""
 
 from __future__ import annotations
 
@@ -25,6 +25,19 @@ EmitEvent = Callable[[str, dict[str, Any]], Awaitable[None]]
 
 class AssistantError(Exception):
     """A safe assistant/upstream failure that may be shown to the signed-in user."""
+
+
+def _inference_backend(settings: Settings) -> str:
+    backend = getattr(settings, "inference_backend", "ollama")
+    if backend not in {"ollama", "llamacpp"}:
+        raise AssistantError("The local model backend is misconfigured")
+    return backend
+
+
+def _inference_base_url(settings: Settings) -> str:
+    # inference_base_url is optional on Settings so older keyword constructors
+    # continue to point at their existing ollama_url value.
+    return getattr(settings, "inference_base_url", None) or settings.ollama_url
 
 
 async def _ollama_json(
@@ -67,35 +80,48 @@ async def _ollama_json(
 async def installed_models(
     client: httpx.AsyncClient, settings: Settings
 ) -> dict[str, Any]:
+    backend = _inference_backend(settings)
+    base_url = _inference_base_url(settings)
     payload = await _ollama_json(
-        client, "GET", f"{settings.ollama_url}/api/tags", timeout=15.0
+        client,
+        "GET",
+        f"{base_url}/api/tags" if backend == "ollama" else f"{base_url}/v1/models",
+        timeout=15.0,
     )
-    if not isinstance(payload, dict) or not isinstance(payload.get("models"), list):
+    list_key = "models" if backend == "ollama" else "data"
+    if not isinstance(payload, dict) or not isinstance(payload.get(list_key), list):
         raise AssistantError("The local model service returned an invalid model list")
 
     models_by_id: dict[str, dict[str, Any]] = {}
-    for raw in payload["models"][:200]:
+    for raw in payload[list_key][:200]:
         if not isinstance(raw, dict):
             continue
-        model_id = raw.get("name") or raw.get("model")
+        model_id = (
+            raw.get("name") or raw.get("model")
+            if backend == "ollama"
+            else raw.get("id")
+        )
         if not isinstance(model_id, str) or not 1 <= len(model_id) <= 200:
             continue
-        details = raw.get("details") if isinstance(raw.get("details"), dict) else {}
-        size = raw.get("size")
+        details_key = "details" if backend == "ollama" else "meta"
+        details = (
+            raw.get(details_key) if isinstance(raw.get(details_key), dict) else {}
+        )
+        size = raw.get("size") if backend == "ollama" else details.get("size")
+        parameter_size = details.get("parameter_size")
+        if not isinstance(parameter_size, str):
+            parameter_size = _format_parameter_count(details.get("n_params"))
+        quantization = details.get("quantization_level")
+        if not isinstance(quantization, str):
+            quantization = details.get("quantization")
+        if not isinstance(quantization, str):
+            quantization = details.get("ftype")
         models_by_id[model_id] = {
             "id": model_id,
             "name": model_id,
             "size": size if isinstance(size, int) and size >= 0 else None,
-            "parameter_size": (
-                details.get("parameter_size")
-                if isinstance(details.get("parameter_size"), str)
-                else None
-            ),
-            "quantization": (
-                details.get("quantization_level")
-                if isinstance(details.get("quantization_level"), str)
-                else None
-            ),
+            "parameter_size": parameter_size,
+            "quantization": quantization if isinstance(quantization, str) else None,
             "recommended": False,
         }
 
@@ -116,6 +142,16 @@ async def installed_models(
     for model in ordered:
         model["recommended"] = model["id"] == selected_default
     return {"models": ordered, "default_model": selected_default}
+
+
+def _format_parameter_count(value: Any) -> str | None:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        return None
+    for divisor, suffix in ((1_000_000_000, "B"), (1_000_000, "M")):
+        if value >= divisor:
+            amount = f"{value / divisor:.1f}".rstrip("0").rstrip(".")
+            return f"{amount}{suffix}"
+    return str(value)
 
 
 def _system_prompt() -> str:
@@ -150,8 +186,78 @@ def _tool_call(raw: Any) -> tuple[str, dict[str, Any], str | None] | None:
                 arguments = {}
     if not isinstance(arguments, dict):
         arguments = {}
-    call_id = raw.get("id") if isinstance(raw.get("id"), str) else None
+    raw_call_id = raw.get("id")
+    call_id = (
+        raw_call_id
+        if isinstance(raw_call_id, str) and 1 <= len(raw_call_id) <= 200
+        else None
+    )
     return name, arguments, call_id
+
+
+def _openai_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert the internal/Ollama history to an OpenAI-compatible history."""
+    converted: list[dict[str, Any]] = []
+    pending_tool_ids: list[str] = []
+    for message_index, message in enumerate(messages):
+        role = message.get("role")
+        content = message.get("content")
+        normalized_content = content if isinstance(content, str) else ""
+
+        if role == "assistant" and isinstance(message.get("tool_calls"), list):
+            tool_calls: list[dict[str, Any]] = []
+            pending_tool_ids = []
+            for call_index, raw_call in enumerate(message["tool_calls"]):
+                parsed = _tool_call(raw_call)
+                if parsed is None:
+                    continue
+                name, arguments, call_id = parsed
+                # Some Ollama models and older llama.cpp templates omit IDs. A
+                # stable local ID keeps the OpenAI assistant/tool pair valid.
+                call_id = call_id or f"call_{message_index}_{call_index}"
+                pending_tool_ids.append(call_id)
+                tool_calls.append(
+                    {
+                        "id": call_id,
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "arguments": json.dumps(
+                                arguments,
+                                ensure_ascii=False,
+                                separators=(",", ":"),
+                            ),
+                        },
+                    }
+                )
+            normalized: dict[str, Any] = {
+                "role": "assistant",
+                "content": normalized_content,
+            }
+            if tool_calls:
+                normalized["tool_calls"] = tool_calls
+            converted.append(normalized)
+            continue
+
+        if role == "tool":
+            raw_call_id = message.get("tool_call_id")
+            call_id = (
+                raw_call_id
+                if isinstance(raw_call_id, str) and 1 <= len(raw_call_id) <= 200
+                else None
+            )
+            if call_id and call_id in pending_tool_ids:
+                pending_tool_ids.remove(call_id)
+            elif call_id is None and pending_tool_ids:
+                call_id = pending_tool_ids.pop(0)
+            normalized = {"role": "tool", "content": normalized_content}
+            if call_id:
+                normalized["tool_call_id"] = call_id
+            converted.append(normalized)
+            continue
+
+        converted.append({"role": role, "content": normalized_content})
+    return converted
 
 
 def _deduplicate_sources(sources: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -188,32 +294,58 @@ async def _chat_once(
     *,
     include_tools: bool,
 ) -> dict[str, Any]:
-    body: dict[str, Any] = {
-        "model": model,
-        "messages": messages,
-        "stream": False,
-        # Qwen's thinking mode is enabled by default. On this hardware it can
-        # consume the whole prediction budget without producing visible text.
-        # Keep the browser's bounded tool loop in visible-answer mode.
-        "think": False,
-        "options": {
-            "num_ctx": settings.ollama_context_length,
-            "num_predict": 2_048,
+    backend = _inference_backend(settings)
+    base_url = _inference_base_url(settings)
+    if backend == "ollama":
+        body: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "stream": False,
+            # Qwen's thinking mode is enabled by default. On this hardware it can
+            # consume the whole prediction budget without producing visible text.
+            # Keep the browser's bounded tool loop in visible-answer mode.
+            "think": False,
+            "options": {
+                "num_ctx": settings.ollama_context_length,
+                "num_predict": 2_048,
+                "temperature": 0.3,
+            },
+        }
+        endpoint = f"{base_url}/api/chat"
+    else:
+        body = {
+            "model": model,
+            "messages": _openai_messages(messages),
+            "stream": False,
+            "max_tokens": 2_048,
             "temperature": 0.3,
-        },
-    }
+            "reasoning_effort": "none",
+            "chat_template_kwargs": {"enable_thinking": False},
+            "parse_tool_calls": True,
+        }
+        endpoint = f"{base_url}/v1/chat/completions"
     if include_tools:
         body["tools"] = TOOL_DEFINITIONS
+        if backend == "llamacpp":
+            body["tool_choice"] = "auto"
     payload = await _ollama_json(
         client,
         "POST",
-        f"{settings.ollama_url}/api/chat",
+        endpoint,
         body=body,
         timeout=600.0,
     )
-    if not isinstance(payload, dict) or not isinstance(payload.get("message"), dict):
+    if backend == "ollama":
+        message = payload.get("message") if isinstance(payload, dict) else None
+    else:
+        choices = payload.get("choices") if isinstance(payload, dict) else None
+        first_choice = choices[0] if isinstance(choices, list) and choices else None
+        message = (
+            first_choice.get("message") if isinstance(first_choice, dict) else None
+        )
+    if not isinstance(message, dict):
         raise AssistantError("The local model returned an invalid chat response")
-    return payload["message"]
+    return message
 
 
 async def run_chat(

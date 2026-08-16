@@ -52,15 +52,7 @@ if [[ -n "${CONTAINER_ENGINE:-}" ]] || [[ ! -f "${project_dir}/.runtime-engine" 
 fi
 chmod 600 "${project_dir}/.runtime-engine"
 
-if ! curl --fail --silent --max-time 3 http://127.0.0.1:11434/api/version >/dev/null; then
-  systemctl --user start ollama.service 2>/dev/null || true
-fi
-if ! curl --fail --silent --retry 20 --retry-delay 1 --retry-connrefused \
-  --max-time 3 http://127.0.0.1:11434/api/version >/dev/null; then
-  echo "Ollama is not responding on 127.0.0.1:11434." >&2
-  echo "Run: systemctl --user enable --now ollama.service" >&2
-  exit 1
-fi
+"${project_dir}/scripts/inference.sh" ensure
 
 "${project_dir}/scripts/compose.sh" \
   -f "${project_dir}/compose.yaml" \

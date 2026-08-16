@@ -34,9 +34,11 @@ else
 fi
 systemctl --user enable "${unit_name}"
 
-echo "KevinBeLLM (${mode}) will start automatically when this user logs in."
+echo "KevinBeLLM (${mode}) will start with this user's systemd manager."
 echo "Start it now with: systemctl --user start ${unit_name}"
 if [[ "$(loginctl show-user "${USER}" -p Linger --value 2>/dev/null || true)" != "yes" ]]; then
-  echo "For remote access after logout/reboot, an administrator must also run:"
+  echo "To start after an encrypted boot without a desktop login, also run:"
   echo "  sudo loginctl enable-linger ${USER}"
+else
+  echo "User lingering is enabled; startup can occur after the encrypted disk is unlocked."
 fi

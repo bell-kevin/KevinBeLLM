@@ -13,7 +13,7 @@ if [[ ! -f "${project_dir}/infra/search/.env" ]]; then
   "${project_dir}/scripts/setup.sh"
 fi
 
-systemctl --user start ollama.service
+"${project_dir}/scripts/inference.sh" ensure
 
 "${project_dir}/scripts/compose.sh" \
   -f "${project_dir}/infra/search/compose.yaml" \

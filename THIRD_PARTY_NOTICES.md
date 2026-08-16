@@ -9,14 +9,16 @@ are not relicensed by this repository.
 
 | Component | Pinned/recommended version | Upstream license | Source |
 |---|---|---|---|
+| llama.cpp | `b10451` | MIT | <https://github.com/ggml-org/llama.cpp/tree/b10451> |
 | Ollama | 0.32.9 | MIT | <https://github.com/ollama/ollama/tree/v0.32.9> |
+| Qwen3.5 27B weights | official base; third-party GGUF packaging evaluated separately | Apache-2.0 | <https://huggingface.co/Qwen/Qwen3.5-27B> |
 | Qwen3.6 35B-A3B weights | official base, Q4_K_M packaging | Apache-2.0 | <https://huggingface.co/Qwen/Qwen3.6-35B-A3B> |
 | Qwen3.5 9B weights | official base, Q4_K_M packaging | Apache-2.0 | <https://huggingface.co/Qwen/Qwen3.5-9B> |
 | SearXNG | commit `c01178d03` | AGPL-3.0-or-later | <https://github.com/searxng/searxng/tree/c01178d03> |
 | hyper-h2 | 4.4.1 security overlay | MIT | <https://github.com/python-hyper/h2/tree/v4.4.1> |
 | cloudflared client | 2026.7.3 | Apache-2.0 | <https://github.com/cloudflare/cloudflared/tree/2026.7.3> |
 | Podman | Ubuntu 24.04 package 4.9.3 | Apache-2.0 | <https://github.com/containers/podman> |
-| podman-compose | 1.4.1 or newer | GPL-2.0-only | <https://github.com/containers/podman-compose> |
+| podman-compose | 1.6.0 (1.4.1 minimum) | GPL-2.0-only | <https://github.com/containers/podman-compose> |
 | Python | 3.13.15 (assistant), 3.12.13 (tools) | PSF-2.0 | <https://www.python.org/> |
 | pip | 26.2.1 (live-tools build bootstrap) | MIT | <https://github.com/pypa/pip/tree/26.2.1> |
 | FastAPI | 0.141.1 | MIT | <https://github.com/fastapi/fastapi> |
@@ -44,6 +46,13 @@ before redistributing model blobs. Every model discovered through Hugging Face
 has its own license; a repository being public or downloadable does not make it
 FLOSS. Missing, custom, research-only, or noncommercial model licenses require
 separate review.
+
+The two-node path builds llama.cpp with its experimental RPC backend. Upstream
+calls that backend insecure, and the pinned release is not represented here as
+a security fix for `CVE-2026-34159`. See `SECURITY.md` and recheck upstream
+advisories before every pin change. A separately packaged GGUF retains both the
+base model's license and any applicable packaging terms; record the exact
+repository, filename, size, and SHA-256 digest used by a real deployment.
 
 ## Hosted service and data boundaries
 

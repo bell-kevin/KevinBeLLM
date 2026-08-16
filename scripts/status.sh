@@ -4,12 +4,8 @@ set -euo pipefail
 
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
-echo "Ollama"
-systemctl --user --no-pager --full status ollama.service 2>/dev/null | sed -n '1,8p' || true
-echo
-curl --fail --silent http://127.0.0.1:11434/api/tags \
-  | python3 -c 'import json,sys; data=json.load(sys.stdin); print("Models:"); [print("  -", item["name"]) for item in data.get("models", [])]' \
-  || echo "Models: Ollama API unavailable"
+echo "Inference"
+"${project_dir}/scripts/inference.sh" status
 
 echo
 echo "Application containers"
