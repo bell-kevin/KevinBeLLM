@@ -103,6 +103,7 @@ Host kevinbellm-a
     Port $MachineAPort
     IdentityFile "$IdentityFile"
     IdentitiesOnly yes
+    UpdateHostKeys no
     ServerAliveInterval 30
     ServerAliveCountMax 3
 
@@ -112,6 +113,7 @@ Host kevinbellm-b
     Port $MachineBPort
     IdentityFile "$IdentityFile"
     IdentitiesOnly yes
+    UpdateHostKeys no
     ServerAliveInterval 30
     ServerAliveCountMax 3
 $endMarker
