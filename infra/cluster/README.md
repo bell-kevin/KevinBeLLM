@@ -141,13 +141,25 @@ RPC/security arguments cannot be changed there:
 - no multimodal projector, embedded web UI, or slots endpoint;
 - hardened systemd filesystem, capability, namespace, and privilege controls.
 
-The measured persistent configuration is 4,096-token context, batch 2,048,
+The measured persistent configuration is 32,768-token context, batch 2,048,
 ubatch 512, eight CPU threads, one request slot, Q8 K/V cache, flash attention,
-memory mapping, and Qwen3.5 MTP with draft maximum 3. Three repeated 128-token
-server runs measured `53.985 ± 0.057` generation tokens/second, with MTP draft
-acceptance about 52%, 4,388 MiB VRAM free, and a peak temperature of
-61°C. A forced OpenAI-compatible tool request returned exactly one parsed
-weather call. These are measurements of this Machine A, not general guarantees.
+memory mapping, and Qwen3.5 MTP with draft maximum 4. Generation holds at
+roughly 62-66 tokens/second from 130-token up to 23,000-token prompts, with
+3,624 MiB VRAM free and temperatures in the high 40s to low 50s °C. A forced
+OpenAI-compatible tool request returned exactly one parsed weather call. These
+are measurements of this Machine A, not general guarantees.
+
+Three settings were swept on this hardware before being fixed:
+
+| Setting | Swept range | Chosen | Finding |
+| --- | --- | ---: | --- |
+| Context size | 4,096 - 32,768 | 32,768 | KV cache is unusually cheap: 32K costs only ~716 MiB and ~5% generation speed over 4K. The old 4,096 gave up 8x context for almost nothing. |
+| MTP draft depth | 1 - 8 | 4 | 2 and 4 tie near the top (~64 tok/s); 1 and 6 drop to ~54. The 3 -> 4 gain is ~2-3%, near run-to-run noise. |
+| ubatch | 256 - 2,048 | 512 | All values land within 2% of ~1,350 tokens/second. Prefill is GPU-compute-bound here, not batch-bound, so the smallest sufficient value keeps VRAM free. |
+
+Prefill rate, not generation rate, sets time to first token: about 0.3 s at 130
+prompt tokens, 2.6 s at 3,200, and 18 s at 23,000. That ceiling is a property of
+the RTX 3060 and cannot be tuned away.
 
 Check the boundary and advertised alias:
 

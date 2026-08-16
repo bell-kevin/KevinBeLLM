@@ -54,6 +54,10 @@ def test_login_session_csrf_models_and_chat(tmp_path, monkeypatch) -> None:
     async def fake_chat(_client, _settings, model, messages, emit):
         assert messages[-1] == {"role": "user", "content": "hello"}
         await emit("status", {"message": "Testing"})
+        # run_chat now streams visible text as the model produces it; main.py no
+        # longer re-chunks a finished answer.
+        await emit("delta", {"content": "Local "})
+        await emit("delta", {"content": "answer"})
         return "Local answer", [{"title": "Example", "url": "https://example.test/"}]
 
     monkeypatch.setattr("app.main.installed_models", fake_models)
@@ -154,8 +158,12 @@ def test_login_session_csrf_models_and_chat(tmp_path, monkeypatch) -> None:
             stream = "".join(response.iter_text())
         assert response.status_code == 200
         assert "event: status" in stream
-        assert 'event: delta\ndata: {"content":"Local answer"}' in stream
+        assert 'event: delta\ndata: {"content":"Local "}' in stream
+        assert 'event: delta\ndata: {"content":"answer"}' in stream
         assert "event: done" in stream
+        # "done" carries the authoritative answer so the client can reconcile
+        # its live preview against post-processed text.
+        assert '"content":"Local answer"' in stream
 
         assert client.post("/api/auth/logout").status_code == 403
         assert client.post(

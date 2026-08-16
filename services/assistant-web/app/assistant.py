@@ -21,6 +21,7 @@ MAX_TOOL_ROUNDS = 6
 MAX_ASSISTANT_CHARS = 50_000
 
 EmitEvent = Callable[[str, dict[str, Any]], Awaitable[None]]
+OnDelta = Callable[[str], Awaitable[None]]
 
 
 class AssistantError(Exception):
@@ -75,6 +76,111 @@ async def _ollama_json(
         return json.loads(content)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise AssistantError("The local model service returned invalid data") from exc
+
+
+def _merge_tool_call_deltas(
+    accumulated: dict[int, dict[str, Any]], raw_calls: list[Any]
+) -> None:
+    """Fold one streamed ``delta.tool_calls`` fragment into the pending calls.
+
+    OpenAI-compatible streaming splits a single call across many chunks: the
+    name usually arrives once and the JSON arguments arrive character by
+    character, keyed by a stable ``index``.
+    """
+    for item in raw_calls[:MAX_TOOL_CALLS]:
+        if not isinstance(item, dict):
+            continue
+        index = item.get("index")
+        if not isinstance(index, int) or isinstance(index, bool):
+            index = len(accumulated)
+        slot = accumulated.setdefault(index, {"function": {"name": "", "arguments": ""}})
+        call_id = item.get("id")
+        if isinstance(call_id, str) and call_id:
+            slot["id"] = call_id
+        function = item.get("function")
+        if not isinstance(function, dict):
+            continue
+        name = function.get("name")
+        if isinstance(name, str) and name:
+            slot["function"]["name"] = name
+        arguments = function.get("arguments")
+        if isinstance(arguments, str) and arguments:
+            slot["function"]["arguments"] += arguments
+
+
+async def _stream_chat_completion(
+    client: httpx.AsyncClient,
+    url: str,
+    body: dict[str, Any],
+    *,
+    timeout: float,
+    on_delta: OnDelta,
+) -> dict[str, Any]:
+    """Read an SSE chat completion, forwarding visible text as it arrives.
+
+    Returns the same message shape as the buffered path so the bounded tool
+    loop does not need to know which transport produced it.
+    """
+    content_parts: list[str] = []
+    tool_calls: dict[int, dict[str, Any]] = {}
+    received = 0
+    try:
+        async with asyncio.timeout(timeout):
+            async with client.stream(
+                "POST",
+                url,
+                json=body,
+                headers={"Accept": "text/event-stream"},
+                follow_redirects=False,
+                timeout=timeout,
+            ) as response:
+                if response.status_code < 200 or response.status_code >= 300:
+                    raise AssistantError("The local model service rejected the request")
+                async for line in response.aiter_lines():
+                    received += len(line) + 1
+                    if received > MAX_OLLAMA_RESPONSE_BYTES:
+                        raise AssistantError("The local model response was too large")
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if not data or data == "[DONE]":
+                        continue
+                    try:
+                        chunk = json.loads(data)
+                    except json.JSONDecodeError as exc:
+                        raise AssistantError(
+                            "The local model service returned invalid data"
+                        ) from exc
+                    if not isinstance(chunk, dict):
+                        continue
+                    choices = chunk.get("choices")
+                    if not isinstance(choices, list) or not choices:
+                        continue
+                    first = choices[0]
+                    delta = first.get("delta") if isinstance(first, dict) else None
+                    if not isinstance(delta, dict):
+                        continue
+                    piece = delta.get("content")
+                    if isinstance(piece, str) and piece:
+                        content_parts.append(piece)
+                        await on_delta(piece)
+                    raw_calls = delta.get("tool_calls")
+                    if isinstance(raw_calls, list) and raw_calls:
+                        _merge_tool_call_deltas(tool_calls, raw_calls)
+    except AssistantError:
+        raise
+    except httpx.HTTPError as exc:
+        raise AssistantError("The local model service is unavailable") from exc
+    except TimeoutError as exc:
+        raise AssistantError("The local model service exceeded its deadline") from exc
+
+    message: dict[str, Any] = {
+        "role": "assistant",
+        "content": "".join(content_parts),
+    }
+    if tool_calls:
+        message["tool_calls"] = [tool_calls[key] for key in sorted(tool_calls)]
+    return message
 
 
 async def installed_models(
@@ -293,9 +399,13 @@ async def _chat_once(
     messages: list[dict[str, Any]],
     *,
     include_tools: bool,
+    on_delta: OnDelta | None = None,
 ) -> dict[str, Any]:
     backend = _inference_backend(settings)
     base_url = _inference_base_url(settings)
+    # Only the llama.cpp path streams. The legacy Ollama adapter keeps its
+    # buffered contract so this change cannot alter that backend's behaviour.
+    streaming = on_delta is not None and backend == "llamacpp"
     if backend == "ollama":
         body: dict[str, Any] = {
             "model": model,
@@ -316,7 +426,7 @@ async def _chat_once(
         body = {
             "model": model,
             "messages": _openai_messages(messages),
-            "stream": False,
+            "stream": streaming,
             "max_tokens": 2_048,
             "temperature": 0.3,
             "reasoning_effort": "none",
@@ -328,6 +438,10 @@ async def _chat_once(
         body["tools"] = TOOL_DEFINITIONS
         if backend == "llamacpp":
             body["tool_choice"] = "auto"
+    if streaming and on_delta is not None:
+        return await _stream_chat_completion(
+            client, endpoint, body, timeout=600.0, on_delta=on_delta
+        )
     payload = await _ollama_json(
         client,
         "POST",
@@ -365,9 +479,38 @@ async def run_chat(
 
     await emit("status", {"message": "Asking the local model…"})
     final_content = ""
+    streamed_chars = 0
+    streamed_any = False
+
+    async def on_delta(piece: str) -> None:
+        # Live preview only. The "done" event still carries the authoritative
+        # answer, so a partial stream can never become the stored reply.
+        nonlocal streamed_chars, streamed_any
+        allowed = piece[: max(0, MAX_ASSISTANT_CHARS - streamed_chars)]
+        if not allowed:
+            return
+        streamed_chars += len(allowed)
+        streamed_any = True
+        await emit("delta", {"content": allowed})
+
+    async def begin_round() -> None:
+        # A round that ends in tool calls may already have streamed a preamble.
+        # Clear it so the next round's answer does not append to dead text.
+        nonlocal streamed_chars, streamed_any
+        if streamed_any:
+            await emit("reset", {})
+            streamed_chars = 0
+            streamed_any = False
+
     for _round in range(MAX_TOOL_ROUNDS):
+        await begin_round()
         message = await _chat_once(
-            client, settings, model, conversation, include_tools=True
+            client,
+            settings,
+            model,
+            conversation,
+            include_tools=True,
+            on_delta=on_delta,
         )
         raw_content = message.get("content")
         content = raw_content if isinstance(raw_content, str) else ""
@@ -384,8 +527,14 @@ async def run_chat(
         ]
         if not parsed_calls:
             if executed >= MAX_TOOL_CALLS:
+                await begin_round()
                 message = await _chat_once(
-                    client, settings, model, conversation, include_tools=False
+                    client,
+                    settings,
+                    model,
+                    conversation,
+                    include_tools=False,
+                    on_delta=on_delta,
                 )
                 raw_content = message.get("content")
                 final_content = raw_content if isinstance(raw_content, str) else ""
@@ -426,8 +575,14 @@ async def run_chat(
         await emit("status", {"message": "Reading the tool results…"})
     else:
         # Stop offering tools after the bounded loop and request one grounded answer.
+        await begin_round()
         message = await _chat_once(
-            client, settings, model, conversation, include_tools=False
+            client,
+            settings,
+            model,
+            conversation,
+            include_tools=False,
+            on_delta=on_delta,
         )
         raw_content = message.get("content")
         final_content = raw_content if isinstance(raw_content, str) else ""

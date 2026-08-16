@@ -728,8 +728,23 @@
         scrollConversation();
         break;
       }
+      case "reset":
+        // A tool round streamed a preamble that its own tool calls superseded.
+        // Drop it so the next round's answer does not append to dead text.
+        view.content = "";
+        view.textNode.data = "";
+        break;
       case "done":
         streamState.done = true;
+        if (typeof payload.content === "string") {
+          if (payload.content.length > MAX_RESPONSE_CHARS) {
+            throw new Error("The model response exceeded the safe display limit.");
+          }
+          // The streamed text was a live preview. Replace it with the server's
+          // authoritative answer, which may include appended source URLs.
+          view.content = payload.content;
+          view.textNode.data = payload.content;
+        }
         if (typeof payload.model === "string" && payload.model) {
           const matchingModel = state.models.find((model) => model.id === payload.model);
           view.modelLabel.textContent = matchingModel?.name || boundedText(payload.model, 300);

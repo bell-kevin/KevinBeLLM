@@ -19,7 +19,7 @@ model API are not published directly to the LAN or Internet; SSH is the only
 LAN-facing administration service, and remote web traffic arrives through an
 outbound Cloudflare Tunnel.
 
-The public [GitHub Pages site](docs/index.html) is only a static project landing
+The public [GitHub Pages site](https://bell-kevin.github.io/KevinBeLLM/) is only a static project landing
 page. It has no login form, runtime probe, model-health indicator, analytics, or
 private configuration. Authorized users enter the actual assistant at
 <https://assistant.kevin-bell.com/>, first through Cloudflare Access and then
@@ -41,10 +41,12 @@ compute buffers, KV cache, and display use consume part of each card.
 The default model installer pins `Qwen_Qwen3.5-9B-Q6_K.gguf` at immutable
 revision `182be2fd6c7bc44887d88a91cb03ff009cc9f549`, verifies its exact
 7,958,818,848-byte size and SHA-256, and refuses mismatched files. On Machine A,
-the measured MTP configuration generated `53.985 ± 0.057` tokens/second over
-three 128-token runs, retained about 4.3 GiB of free VRAM, and passed a
-coherent OpenAI-compatible tool-call check. Results are local measurements,
-not a guarantee for other systems.
+the tuned MTP configuration sustains roughly 62-66 generation tokens/second
+across prompt lengths from 130 to 23,000 tokens, retains about 3.6 GiB of free
+VRAM at a 32,768-token context, and passes a coherent OpenAI-compatible
+tool-call check. Time to first token is about 0.3 s for a short prompt and
+scales with prompt length at a prefill rate of roughly 1,350 tokens/second.
+Results are local measurements, not a guarantee for other systems.
 
 The optional pinned 27B Q4_K_M artifact is retained for comparison. It needs
 CPU offload on A alone and measured only about 1.42 tokens/second with the
@@ -159,8 +161,9 @@ guidance.
   coordinator templates.
 - `scripts/windows/` — administration-laptop SSH setup and private forwarding.
 - `infra/cluster/` — non-secret examples; active environment files are ignored.
-- `docs/` — static GitHub Pages landing site and the authoritative deployment
-  guide.
+- `docs/` — source for the static
+  [GitHub Pages landing site](https://bell-kevin.github.io/KevinBeLLM/) and the
+  authoritative deployment guide.
 
 KevinBeLLM retains Argon2 password hashing, hashed sessions, CSRF and origin
 checks, a bounded tool loop, SearXNG integration, live-data tools, and a

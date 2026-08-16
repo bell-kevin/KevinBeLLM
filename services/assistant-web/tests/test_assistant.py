@@ -50,7 +50,9 @@ def test_model_cannot_amplify_tool_calls(monkeypatch, tmp_path) -> None:
     calls = 0
     model_requests: list[list[dict]] = []
 
-    async def fake_chat_once(_client, _settings, _model, messages, *, include_tools):
+    async def fake_chat_once(
+        _client, _settings, _model, messages, *, include_tools, on_delta=None
+    ):
         model_requests.append(messages.copy())
         if len(model_requests) == 1:
             return {
@@ -168,23 +170,29 @@ def test_llamacpp_chat_completion_is_normalized(tmp_path) -> None:
     settings = _settings(tmp_path, backend="llamacpp")
     requests: list[dict] = []
 
+    def _sse(*chunks: dict) -> bytes:
+        lines = [f"data: {json.dumps(chunk)}\n\n" for chunk in chunks]
+        lines.append("data: [DONE]\n\n")
+        return "".join(lines).encode()
+
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url == "http://127.0.0.1:8080/v1/chat/completions"
         requests.append(json.loads(request.content))
         return httpx.Response(
             200,
-            json={
-                "id": "chatcmpl-test",
-                "object": "chat.completion",
-                "choices": [
-                    {
-                        "index": 0,
-                        "message": {"role": "assistant", "content": "Local answer"},
-                        "finish_reason": "stop",
-                    }
-                ],
-            },
+            headers={"Content-Type": "text/event-stream"},
+            content=_sse(
+                {"choices": [{"index": 0, "delta": {"role": "assistant"}}]},
+                {"choices": [{"index": 0, "delta": {"content": "Local "}}]},
+                {"choices": [{"index": 0, "delta": {"content": "answer"}}]},
+                {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]},
+            ),
         )
+
+    events: list[tuple[str, dict]] = []
+
+    async def record(event: str, payload: dict) -> None:
+        events.append((event, payload))
 
     async def run():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
@@ -193,14 +201,20 @@ def test_llamacpp_chat_completion_is_normalized(tmp_path) -> None:
                 settings,
                 "test-model",
                 [{"role": "user", "content": "hello"}],
-                lambda _event, _payload: asyncio.sleep(0),
+                record,
             )
 
     content, sources = asyncio.run(run())
     assert (content, sources) == ("Local answer", [])
+    # The answer must reach the browser incrementally, not as one block after
+    # the whole generation finished.
+    assert [payload["content"] for name, payload in events if name == "delta"] == [
+        "Local ",
+        "answer",
+    ]
     assert len(requests) == 1
     assert requests[0]["model"] == "test-model"
-    assert requests[0]["stream"] is False
+    assert requests[0]["stream"] is True
     assert requests[0]["max_tokens"] == 2_048
     assert requests[0]["temperature"] == 0.3
     assert requests[0]["reasoning_effort"] == "none"
@@ -220,45 +234,60 @@ def test_llamacpp_tool_call_round_trip(
     settings = _settings(tmp_path, backend="llamacpp")
     requests: list[dict] = []
 
+    def _sse(*chunks: dict) -> bytes:
+        lines = [f"data: {json.dumps(chunk)}\n\n" for chunk in chunks]
+        lines.append("data: [DONE]\n\n")
+        return "".join(lines).encode()
+
+    def _delta(fragment: dict) -> dict:
+        return {"choices": [{"index": 0, "delta": fragment}]}
+
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
         requests.append(body)
+        headers = {"Content-Type": "text/event-stream"}
         if len(requests) == 1:
-            tool_call = {
+            opening: dict = {
+                "index": 0,
                 "type": "function",
-                "function": {
-                    "name": "web_search",
-                    "arguments": '{"query":"local inference"}',
-                },
+                "function": {"name": "web_search", "arguments": ""},
             }
             if upstream_call_id is not None:
-                tool_call["id"] = upstream_call_id
+                opening["id"] = upstream_call_id
+            # Real servers split the JSON arguments across many chunks, so the
+            # accumulator must rebuild them in order.
             return httpx.Response(
                 200,
-                json={
-                    "choices": [
+                headers=headers,
+                content=_sse(
+                    _delta({"role": "assistant"}),
+                    _delta({"tool_calls": [opening]}),
+                    _delta(
                         {
-                            "message": {
-                                "role": "assistant",
-                                "content": None,
-                                "tool_calls": [tool_call],
-                            }
+                            "tool_calls": [
+                                {"index": 0, "function": {"arguments": '{"query":'}}
+                            ]
                         }
-                    ]
-                },
+                    ),
+                    _delta(
+                        {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {"arguments": '"local inference"}'},
+                                }
+                            ]
+                        }
+                    ),
+                ),
             )
         return httpx.Response(
             200,
-            json={
-                "choices": [
-                    {
-                        "message": {
-                            "role": "assistant",
-                            "content": "Grounded local answer",
-                        }
-                    }
-                ]
-            },
+            headers=headers,
+            content=_sse(
+                _delta({"role": "assistant"}),
+                _delta({"content": "Grounded local answer"}),
+            ),
         )
 
     async def fake_tool_run(_self, name, arguments):

@@ -10,7 +10,7 @@ StartLimitIntervalSec=0
 Type=simple
 # Measured RTX 3060 defaults. The private env file supplies the verified model
 # path/alias and may tune performance; API and security arguments stay fixed.
-Environment=KEVINBELLM_LLAMA_CTX_SIZE=4096
+Environment=KEVINBELLM_LLAMA_CTX_SIZE=32768
 Environment=KEVINBELLM_LLAMA_BATCH_SIZE=2048
 Environment=KEVINBELLM_LLAMA_UBATCH_SIZE=512
 Environment=KEVINBELLM_LLAMA_THREADS=8
@@ -19,7 +19,7 @@ Environment=KEVINBELLM_LLAMA_GPU_LAYERS=all
 Environment=KEVINBELLM_LLAMA_CACHE_TYPE_K=q8_0
 Environment=KEVINBELLM_LLAMA_CACHE_TYPE_V=q8_0
 Environment=KEVINBELLM_LLAMA_FLASH_ATTN=on
-Environment=KEVINBELLM_LLAMA_SPEC_DRAFT_N_MAX=3
+Environment=KEVINBELLM_LLAMA_SPEC_DRAFT_N_MAX=4
 Environment=LLAMA_MODEL_ALIAS=kevinbellm-9b
 EnvironmentFile=@STANDALONE_ENV@
 # b10451 auto-loads /etc/llama.cpp/config.ini and an XDG/HOME-derived user

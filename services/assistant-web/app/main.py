@@ -510,10 +510,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         )
                 finally:
                     request.app.state.chat_slots.release()
-                await emit("status", {"message": "Preparing the answer…"})
-                for offset in range(0, len(content), 240):
-                    await emit("delta", {"content": content[offset : offset + 240]})
-                await emit("done", {"model": body.model, "sources": sources})
+                # The visible answer already streamed token by token while the
+                # model generated it. "done" carries the authoritative text so the
+                # client reconciles its live preview against post-processing such
+                # as appended source URLs or the assistant-character cap.
+                await emit(
+                    "done",
+                    {"model": body.model, "sources": sources, "content": content},
+                )
             except asyncio.CancelledError:
                 raise
             except AssistantError as exc:
