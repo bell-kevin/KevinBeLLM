@@ -1,3 +1,5 @@
+<a name="readme-top"></a>
+
 # KevinBeLLM: private local AI
 
 https://bell-kevin.github.io/KevinBeLLM/
@@ -249,3 +251,5 @@ credentials, model files, account databases, logs, or chat exports.
 https://bell-kevin.github.io/KevinBeLLM/
 
 https://assistant.kevin-bell.com/
+
+<p align="left"><a href="#readme-top">back to top</a></p>
