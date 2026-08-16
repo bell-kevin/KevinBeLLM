@@ -12,7 +12,7 @@ echo "Application containers"
 "${project_dir}/scripts/compose.sh" \
   -f "${project_dir}/compose.yaml" \
   --env-file "${project_dir}/.env" \
-  -p asus-kevin-bellm \
+  -p kevinbellm \
   ps
 
 echo
@@ -24,7 +24,7 @@ fi
 "${project_dir}/scripts/compose.sh" \
   -f "${project_dir}/infra/cloudflare/compose.yaml" \
   --env-file "${remote_env}" \
-  -p asus-kevin-remote-access \
+  -p kevinbellm-remote-access \
   ps
 
 echo
@@ -32,5 +32,5 @@ echo "Search container"
 "${project_dir}/scripts/compose.sh" \
   -f "${project_dir}/infra/search/compose.yaml" \
   --env-file "${project_dir}/infra/search/.env" \
-  -p asus-kevin-search \
+  -p kevinbellm-search \
   ps

@@ -33,7 +33,7 @@ fi
 "${project_dir}/scripts/compose.sh" \
   -f "${remote_dir}/compose.yaml" \
   --env-file "${remote_env}" \
-  -p asus-kevin-remote-access \
+  -p kevinbellm-remote-access \
   up --detach
 
 echo "Authenticated remote tunnel started for the PUBLIC_URL in .env."

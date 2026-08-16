@@ -11,19 +11,19 @@ fi
 "${project_dir}/scripts/compose.sh" \
   -f "${project_dir}/infra/cloudflare/compose.yaml" \
   --env-file "${remote_env}" \
-  -p asus-kevin-remote-access \
+  -p kevinbellm-remote-access \
   down --remove-orphans
 
 "${project_dir}/scripts/compose.sh" \
   -f "${project_dir}/compose.yaml" \
   --env-file "${project_dir}/.env" \
-  -p asus-kevin-bellm \
+  -p kevinbellm \
   down --remove-orphans
 
 "${project_dir}/scripts/compose.sh" \
   -f "${project_dir}/infra/search/compose.yaml" \
   --env-file "${project_dir}/infra/search/.env" \
-  -p asus-kevin-search \
+  -p kevinbellm-search \
   down --remove-orphans
 
 echo "Stopped the browser, tool, tunnel, and search services."

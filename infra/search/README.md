@@ -10,14 +10,14 @@ Hugging Face engines.
 ## Run
 
 ```bash
-./scripts/compose.sh -f infra/search/compose.yaml --env-file infra/search/.env -p asus-kevin-search up -d --build
-./scripts/compose.sh -f infra/search/compose.yaml --env-file infra/search/.env -p asus-kevin-search ps
+./scripts/compose.sh -f infra/search/compose.yaml --env-file infra/search/.env -p kevinbellm-search up -d --build
+./scripts/compose.sh -f infra/search/compose.yaml --env-file infra/search/.env -p kevinbellm-search ps
 ./infra/search/smoke-test.sh
 ```
 
 `./scripts/setup.sh` creates the ignored local `.env`, generates its secret, and
 records the actual UID/GID. If it is ever removed, run setup again. `LOCAL_UID`
-and `LOCAL_GID` make the container run as the laptop user so bind-mounted files
+and `LOCAL_GID` make the container run as the Machine A user so bind-mounted files
 stay editable.
 
 ## Endpoints

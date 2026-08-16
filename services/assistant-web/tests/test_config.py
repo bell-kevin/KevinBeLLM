@@ -27,6 +27,18 @@ def test_inference_defaults_remain_ollama_compatible(monkeypatch) -> None:
     assert settings.ollama_url == settings.inference_base_url
 
 
+def test_new_inference_default_is_llamacpp(monkeypatch) -> None:
+    _clear_inference_environment(monkeypatch)
+    monkeypatch.delenv("DEFAULT_MODEL", raising=False)
+
+    settings = load_settings()
+
+    assert settings.inference_backend == "llamacpp"
+    assert settings.inference_base_url == "http://127.0.0.1:8080"
+    assert settings.ollama_url == settings.inference_base_url
+    assert settings.default_model == "kevinbellm-27b"
+
+
 def test_llamacpp_inference_configuration(monkeypatch) -> None:
     _clear_inference_environment(monkeypatch)
     monkeypatch.setenv("INFERENCE_BACKEND", "llamacpp")
@@ -38,6 +50,16 @@ def test_llamacpp_inference_configuration(monkeypatch) -> None:
     assert settings.inference_backend == "llamacpp"
     assert settings.inference_base_url == "http://127.0.0.1:8081"
     assert settings.ollama_url == settings.inference_base_url
+
+
+def test_explicit_llamacpp_ignores_legacy_ollama_url(monkeypatch) -> None:
+    _clear_inference_environment(monkeypatch)
+    monkeypatch.setenv("INFERENCE_BACKEND", "llamacpp")
+    monkeypatch.setenv("OLLAMA_URL", "http://127.0.0.1:11434")
+
+    settings = load_settings()
+
+    assert settings.inference_base_url == "http://127.0.0.1:8080"
 
 
 @pytest.mark.parametrize(

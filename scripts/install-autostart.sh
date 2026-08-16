@@ -28,14 +28,22 @@ sed -i "s|@PROJECT_DIR@|${project_dir}|g" "${unit_file}"
 
 systemctl --user daemon-reload
 if [[ "${mode}" == "remote" ]]; then
-  systemctl --user disable kevinbellm.service 2>/dev/null || true
+  other_unit="kevinbellm.service"
 else
-  systemctl --user disable kevinbellm-remote.service 2>/dev/null || true
+  other_unit="kevinbellm-remote.service"
+fi
+if systemctl --user cat "${other_unit}" >/dev/null 2>&1; then
+  systemctl --user disable --now "${other_unit}"
 fi
 systemctl --user enable "${unit_name}"
 
 echo "KevinBeLLM (${mode}) will start with this user's systemd manager."
-echo "Start it now with: systemctl --user start ${unit_name}"
+if systemctl --user is-active --quiet "${unit_name}"; then
+  systemctl --user restart "${unit_name}"
+  echo "Restarted the active service with the newly installed unit."
+else
+  echo "Start it now with: systemctl --user start ${unit_name}"
+fi
 if [[ "$(loginctl show-user "${USER}" -p Linger --value 2>/dev/null || true)" != "yes" ]]; then
   echo "To start after an encrypted boot without a desktop login, also run:"
   echo "  sudo loginctl enable-linger ${USER}"

@@ -37,7 +37,14 @@ def _http_url(name: str, default: str, *, loopback_only: bool = False) -> str:
 
 
 def _inference_backend() -> str:
-    backend = os.getenv("INFERENCE_BACKEND", "ollama").strip().lower()
+    configured = os.getenv("INFERENCE_BACKEND")
+    if configured is not None:
+        backend = configured.strip().lower()
+    elif "OLLAMA_URL" in os.environ or "OLLAMA_BASE_URL" in os.environ:
+        # Preserve legacy deployments that predate INFERENCE_BACKEND.
+        backend = "ollama"
+    else:
+        backend = "llamacpp"
     if backend not in INFERENCE_BACKENDS:
         choices = " or ".join(sorted(INFERENCE_BACKENDS))
         raise RuntimeError(f"INFERENCE_BACKEND must be {choices}")
@@ -52,10 +59,11 @@ def _inference_url(backend: str) -> str:
     )
     # OLLAMA_URL and OLLAMA_BASE_URL remain supported when the new generic
     # setting is absent so existing deployments do not need a flag day.
-    if "OLLAMA_URL" in os.environ:
-        default = os.environ["OLLAMA_URL"]
-    elif "OLLAMA_BASE_URL" in os.environ:
-        default = os.environ["OLLAMA_BASE_URL"]
+    if backend == "ollama":
+        if "OLLAMA_URL" in os.environ:
+            default = os.environ["OLLAMA_URL"]
+        elif "OLLAMA_BASE_URL" in os.environ:
+            default = os.environ["OLLAMA_BASE_URL"]
     return _http_url("INFERENCE_BASE_URL", default, loopback_only=True)
 
 
@@ -108,7 +116,7 @@ class Settings:
     database_concurrency: int
     ollama_context_length: int
     # Defaults keep keyword construction by older callers source-compatible.
-    inference_backend: str = "ollama"
+    inference_backend: str = "llamacpp"
     inference_base_url: str | None = None
 
 
@@ -118,7 +126,12 @@ def load_settings() -> Settings:
     public_origin = f"{parsed_public.scheme}://{parsed_public.netloc}".lower()
     inference_backend = _inference_backend()
     inference_base_url = _inference_url(inference_backend)
-    default_model = os.getenv("DEFAULT_MODEL", "qwen3.6:35b-a3b-q4_K_M").strip()
+    model_default = (
+        "qwen3.6:35b-a3b-q4_K_M"
+        if inference_backend == "ollama"
+        else "kevinbellm-27b"
+    )
+    default_model = os.getenv("DEFAULT_MODEL", model_default).strip()
     if not default_model or len(default_model) > 200:
         raise RuntimeError("DEFAULT_MODEL must be between 1 and 200 characters")
     return Settings(

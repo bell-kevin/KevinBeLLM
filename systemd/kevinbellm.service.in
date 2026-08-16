@@ -5,6 +5,7 @@ Documentation=https://github.com/bell-kevin/ASUS-KevinBeLLM
 Wants=network-online.target
 After=network-online.target
 StartLimitIntervalSec=0
+Conflicts=kevinbellm-remote.service
 
 [Service]
 Type=oneshot

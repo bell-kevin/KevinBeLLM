@@ -1,88 +1,106 @@
-# KevinBeLLM on two Ampere GPUs
+# KevinBeLLM: two-node local AI
 
-This repository adapts [ASUS-KevinBeLLM](https://github.com/bell-kevin/ASUS-KevinBeLLM)
-for two Ethernet-connected Ubuntu desktops and a Windows administration laptop:
+KevinBeLLM is an AGPL-licensed, self-hosted AI workspace served from two
+Ethernet-connected Ubuntu desktops. This repository continues the original
+proof of concept at its existing public URL. Its current architecture is a
+two-host Ampere design:
 
 ```text
-Windows laptop
-  browser -> SSH local forward -> Machine A (RTX 3060 12 GiB)
-                                  KevinBeLLM + llama-server
-                                             |
-                                             | restricted SSH tunnel
-                                             v
-                                  Machine B (RTX 3070 8 GiB)
-                                  loopback-only llama.cpp RPC worker
+Remote browser
+  -> Cloudflare Access
+  -> outbound-only Cloudflare Tunnel
+  -> Machine A: KevinBeLLM login + app + llama-server + RTX 3060 12 GiB
+                                                  |
+                                                  | restricted SSH tunnel
+                                                  v
+                  Machine B: loopback-only llama.cpp RPC + RTX 3070 8 GiB
 ```
 
-Machine A is the coordinator. Machine B is the worker. The laptop may sleep or
-disconnect without stopping inference. All application, llama.cpp, and RPC
-ports stay on loopback; SSH is the only LAN-facing service.
+Machine A coordinates inference and serves the authenticated application.
+Machine B contributes GPU layers through a loopback-only llama.cpp RPC worker.
+The app, model API, and RPC listener are not published directly to the LAN or
+Internet; SSH is the only LAN-facing administration service, and remote web
+traffic arrives through an outbound Cloudflare Tunnel.
 
-The implementation is prepared, but it is not yet deployed to the desktops.
-Their operating systems, usernames, wired addresses, host keys, and encryption
-boot flow must first be confirmed at their physical consoles.
+The public [GitHub Pages site](docs/index.html) is only a static project landing
+page. It has no login form, runtime probe, model-health indicator, analytics, or
+private configuration. Authorized users enter the actual assistant at
+<https://assistant.kevin-bell.com/>, first through Cloudflare Access and then
+through KevinBeLLM's own login.
 
-## Start here
+## Hardware and model
 
-Follow the staged [two-node setup guide](docs/TWO_NODE_SETUP.md). It covers:
+| Role | GPU | Nominal VRAM | Workload |
+| --- | --- | ---: | --- |
+| Machine A, coordinator | NVIDIA GeForce RTX 3060 | 12 GiB | KevinBeLLM, llama-server, local GPU layers |
+| Machine B, worker | NVIDIA GeForce RTX 3070 | 8 GiB | Restricted llama.cpp RPC worker |
 
-- physical inventory and full-disk-encryption behavior;
-- stable router DHCP reservations;
+Both GPUs are Ampere devices with CUDA compute capability 8.6, so they use the
+same pinned CUDA/llama.cpp build. Their 20 GiB of nominal VRAM remains two
+separate memory pools: bandwidth does not add together, and CUDA contexts,
+compute buffers, KV cache, and display use consume part of each card.
+
+The checked-in model installer pins
+`Qwen_Qwen3.5-27B-Q4_K_M.gguf` (17,984,872,928 bytes) and verifies its SHA-256
+before use. The setup guide calls for a conservative first load with one
+request slot and a 4K context; larger contexts should be enabled only after
+measuring real VRAM headroom.
+
+For smaller models or concurrent users, one independent model server per GPU
+may provide better aggregate throughput than splitting every request across the
+network. Installing both cards in one compatible host would remove the network
+RPC boundary, but only after confirming motherboard lanes, case clearance,
+cooling, and PSU capacity.
+
+## Cold boots and remote availability
+
+Both hosts use full-disk encryption. After power loss or shutdown, someone must
+physically power on each machine and enter its LUKS passphrase; Wake-on-LAN and
+SSH cannot bypass that pre-boot step. Once the disks are unlocked, enabled user
+services can restore the worker, restricted tunnel, coordinator, and app
+without a graphical login.
+
+This repository intentionally does not publish current uptime, unlock state,
+model availability, internal addresses, or service health.
+
+## Deployment and administration
+
+Follow [the two-node setup guide](docs/TWO_NODE_SETUP.md) for the staged
+installation. It covers:
+
+- physical inventory and encrypted-boot behavior;
+- stable router DHCP reservations without public port forwarding;
 - fingerprint-verified, key-only SSH from Windows;
-- the pinned CUDA/llama.cpp build on both machines;
-- the restricted A-to-B tunnel and systemd user services;
-- the checksum-pinned 27B model;
-- KevinBeLLM startup, validation, benchmarking, and rollback.
+- the pinned legacy-CPU-safe CUDA/llama.cpp build on both hosts;
+- the restricted Machine A-to-B tunnel and systemd user services;
+- checksum-verified model installation;
+- KevinBeLLM startup, validation, benchmarking, and rollback;
+- an outbound Cloudflare Tunnel protected by Cloudflare Access.
 
-The short reference for the checked-in helpers and private environment files is
-in [infra/cluster/README.md](infra/cluster/README.md).
+The checked-in cluster helpers and ignored private environment files are
+documented in [infra/cluster/README.md](infra/cluster/README.md).
 
-Do not skip the RPC warning in those documents. llama.cpp describes its RPC
-backend as experimental and insecure, and it has had critical unauthenticated
-code-execution bugs. This project therefore binds the worker to
-`127.0.0.1:50052`, binds A's tunnel endpoint to `127.0.0.1:50053`, requires a
-restricted SSH key, and refuses to start until the risk is explicitly
-acknowledged. Never expose either port to the LAN or router.
+For private LAN maintenance from the Windows administration laptop:
 
-## What the hardware can realistically run
+```powershell
+ssh kevinbellm-a
+ssh kevinbellm-b
+```
 
-The two cards provide 20 GiB of *nominal, separate* VRAM. They do not become one
-20 GiB CUDA allocation, and their 360/448 GB/s memory buses do not add together.
-CUDA contexts, compute buffers, KV cache, and display use also consume VRAM.
-
-The first target is the pinned Qwen3.5-27B Q4_K_M GGUF (17,984,872,928 bytes),
-with one request slot and a 4K context for the first load. After measuring
-headroom, try 8K. The original roughly 24 GB 35B Ollama artifact will not fit
-entirely in the nominal 20 GiB pool before runtime overhead.
-
-For smaller models, running one independent server per GPU will usually give
-better aggregate throughput than crossing the network. If the existing
-motherboard, case, cooling, PCIe layout, and PSU safely support both cards,
-putting both GPUs in one desktop is the faster and safer no-purchase pooling
-option; benchmark that only after checking the physical constraints.
-
-## Normal operation after deployment
-
-After a cold boot, physically power on and unlock Machine B, then Machine A.
-Full-disk encryption prevents ordinary SSH and systemd services from starting
-until the disk passphrase has been entered. Once unlocked, systemd lingering
-starts the worker, tunnel, coordinator, and application without a graphical
-login.
-
-From this Windows checkout, open the private UI tunnel:
+To open a laptop-local UI tunnel without publishing a LAN port:
 
 ```powershell
 .\scripts\windows\Open-KevinBeLLMForward.ps1
 ```
 
-Then browse to <http://127.0.0.1:3000>. Direct llama API forwarding is opt-in
-for diagnostics:
+Then visit <http://127.0.0.1:3000>. Direct forwarding of the llama API is
+available only as an explicit diagnostics option:
 
 ```powershell
 .\scripts\windows\Open-KevinBeLLMForward.ps1 -ForwardLlamaApi
 ```
 
-On Machine A, the familiar lifecycle remains:
+On Machine A, the application lifecycle remains:
 
 ```bash
 ./scripts/start.sh
@@ -91,43 +109,63 @@ On Machine A, the familiar lifecycle remains:
 ./scripts/stop.sh
 ```
 
-The application now supports either backend:
+For an in-place upgrade of the old proof of concept, stop its old Compose
+projects first. To retain its account database, set
+`KEVINBELLM_DATA_VOLUME=asus-kevin-bellm-data` in the private root `.env`.
+Fresh Machine A deployments use the hardware-neutral `kevinbellm-data` volume;
+`setup.sh` refuses the common silent-empty-database migration mistake.
+
+The deployed application uses the local llama.cpp OpenAI-compatible endpoint:
 
 ```dotenv
-# Two-node default
 INFERENCE_BACKEND=llamacpp
 INFERENCE_BASE_URL=http://127.0.0.1:8080
 DEFAULT_MODEL=kevinbellm-27b
-
-# Original single-host fallback
-INFERENCE_BACKEND=ollama
-INFERENCE_BASE_URL=http://127.0.0.1:11434
 ```
 
-Both inference URLs are required to be loopback addresses.
+The inference address is required to remain on loopback.
+
+## RPC security boundary
+
+Do not skip the RPC warning in the setup documents. llama.cpp describes its RPC
+backend as experimental and insecure, and the backend has had critical
+unauthenticated code-execution vulnerabilities. This project therefore:
+
+- binds the worker to `127.0.0.1:50052`;
+- binds Machine A's forwarded endpoint to `127.0.0.1:50053`;
+- carries RPC traffic through a source-restricted, command-restricted SSH key;
+- blocks the RPC port in both host firewalls; and
+- refuses to start RPC until the operator explicitly acknowledges the risk.
+
+These controls reduce exposure; they do not make an unsafe RPC implementation
+trusted. Never expose either RPC port to the LAN, a Cloudflare route, or a
+router port forward. See [SECURITY.md](SECURITY.md) for reporting and deployment
+guidance.
 
 ## Project layout
 
-- `services/assistant-web/` — authenticated FastAPI browser assistant, now with
-  Ollama and llama.cpp OpenAI-compatible adapters.
+- `services/assistant-web/` — authenticated FastAPI assistant with a llama.cpp
+  OpenAI-compatible backend adapter.
 - `scripts/cluster/` — Ubuntu preparation, SSH hardening, pinned builds, model
   download, tunnel setup, service installation, and status checks.
 - `systemd/cluster/` — hardened worker, tunnel, and coordinator templates.
-- `scripts/windows/` — laptop SSH aliases/key bootstrap and UI forwarding.
-- `infra/cluster/` — non-secret examples; active `.env` files here are ignored.
-- `docs/TWO_NODE_SETUP.md` — authoritative end-to-end procedure.
+- `scripts/windows/` — administration-laptop SSH setup and private forwarding.
+- `infra/cluster/` — non-secret examples; active environment files are ignored.
+- `docs/` — static GitHub Pages landing site and the authoritative deployment
+  guide.
 
-The existing login, Argon2 password hashing, hashed sessions, CSRF/origin
-checks, bounded tool loop, SearXNG integration, live-data tools, and rootless
-container layout are retained from the original project.
+KevinBeLLM retains Argon2 password hashing, hashed sessions, CSRF and origin
+checks, a bounded tool loop, SearXNG integration, live-data tools, and a
+rootless-container layout. Cloudflare Access supplements this application
+login; it does not replace it.
 
-## License and source publication
+## License and public source
 
 The project is licensed `AGPL-3.0-or-later`; see [LICENSE](LICENSE) and
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Models, llama.cpp, hosted
-services, and other dependencies retain their own licenses.
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Models, llama.cpp, Cloudflare,
+and other dependencies retain their own licenses and terms.
 
-If this modified application is offered over a network outside private testing,
-publish the corresponding modified source and set `SOURCE_URL` to that exact
-public repository before advertising the service. Never commit private `.env`
-files, SSH keys, tunnel credentials, model files, account data, or chat exports.
+When the modified application is offered over a network, publish the
+corresponding source and set `SOURCE_URL` to this exact public repository.
+Never commit private environment files, passwords, SSH keys, Cloudflare tunnel
+credentials, model files, account databases, logs, or chat exports.

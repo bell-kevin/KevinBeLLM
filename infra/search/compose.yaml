@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-name: asus-kevin-search
+name: kevinbellm-search
 
 services:
   searxng:
     build:
       context: .
-    image: asus-kevin-searxng:2026.7.28-c01178d03-h2.4.4.1
+    image: kevinbellm-searxng:2026.7.28-c01178d03-h2.4.4.1
     platform: linux/amd64
     # The pinned image's root entrypoint recursively chowns bind mounts. Run
-    # Granian directly as the laptop user so configuration remains editable.
+    # Granian directly as the Machine A user so configuration remains editable.
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     entrypoint:
       - /usr/local/searxng/.venv/bin/granian

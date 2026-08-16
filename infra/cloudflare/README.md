@@ -1,60 +1,158 @@
-# Authenticated remote access with Cloudflare
+# Authenticated remote access from Machine A
+
+This deployment publishes the loopback-only KevinBeLLM web service on Machine A
+through a **remotely managed, named Cloudflare Tunnel**. Cloudflare Access is the
+outer identity gate and KevinBeLLM keeps its own login as a second gate. Machine
+B has no public route, and neither machine needs a router port-forward.
 
 The `cloudflared` client is Apache-2.0 FLOSS. Cloudflare Access and its edge
-network are hosted proprietary services; this optional adapter is therefore not
-an end-to-end FLOSS path. A self-managed public VPS with a FLOSS reverse proxy,
-VPN, or tunnel can replace it without changing KevinBeLLM's local API.
+network are hosted proprietary services. A self-managed VPN or public reverse
+proxy can replace this adapter without changing KevinBeLLM's local API.
 
-This template publishes the loopback-only KevinBeLLM web service through a
-**remotely managed, named Cloudflare Tunnel**. Cloudflare Access authenticates
-the user before traffic can reach the tunnel. No router port-forwarding or
-public origin port is required.
+Do not use `cloudflared tunnel --url ...` or a temporary `trycloudflare.com`
+Quick Tunnel for this deployment.
 
-Nothing in this directory creates an unauthenticated Quick Tunnel. Do not use
-`cloudflared tunnel --url ...` or a temporary `trycloudflare.com` address for
-this deployment.
-
-## Security model
+## Security boundary
 
 ```text
 public GitHub Pages site
-        │ link only
-        ▼
+        | link only; no credentials or application traffic
+        v
 assistant.example.com
-        │ Cloudflare Access identity policy
-        ▼
-named Cloudflare Tunnel (outbound from the laptop)
-        │ http://127.0.0.1:3000 over host networking
-        ▼
-KevinBeLLM authentication → local model and tools
+        | Cloudflare Access: narrowly scoped owner identity
+        v
+named Tunnel connector on Machine A (outbound connection only)
+        | host networking -> http://127.0.0.1:3000
+        v
+KevinBeLLM application login
+        |
+        v
+local llama.cpp coordinator -> restricted SSH tunnel -> Machine B RPC worker
 ```
 
-The landing page and assistant are different sites. GitHub Pages never proxies
-the assistant and must never contain a tunnel token, Access service token,
-cookie, API key, or imitation client-side password prompt.
+GitHub Pages is only a public landing page. It is not an authentication layer,
+reverse proxy, or application host. It must never contain a tunnel token,
+Access service token, cookie, API key, application password, or client-side
+password prompt.
 
-Cloudflare recommends a remotely managed tunnel for most deployments. A tunnel
-token can run that specific tunnel, so handle it as a secret and rotate it if it
-is exposed. See Cloudflare's [named tunnel setup][create-tunnel], [tunnel token
-permissions][tunnel-token], and [Access application guide][access-app].
+The connector deliberately uses host networking so that a rootless container
+can reach Machine A's loopback-bound origin. The Compose service publishes no
+ports, binds its metrics endpoint to loopback, runs as Machine A's unprivileged
+UID/GID, drops every Linux capability, and uses a read-only root filesystem.
+Keep Machine B out of this path.
 
 ## Prerequisites
 
 - A domain in an active Cloudflare zone.
-- A Cloudflare Zero Trust account and an identity provider. Exact-email rules
-  can use an appropriate configured login method; an organizational IdP is
-  preferable when available.
-- KevinBeLLM working locally at `http://127.0.0.1:3000` with its own
-  authentication enabled. Keep that host port bound to loopback.
-- rootless Podman with podman-compose (preferred), or Docker Compose.
+- A Cloudflare Zero Trust account with a configured login method.
+- A self-hosted [Access application][access-app] whose Allow policy contains only the exact
+  owner email address(es) or a narrowly scoped identity-provider group.
+- KevinBeLLM healthy on Machine A at `http://127.0.0.1:3000`, with its own
+  authentication enabled.
+- Rootless Podman and `podman-compose` on Machine A.
+- Systemd user lingering enabled for Machine A's account so the connector can
+  return after an encrypted boot is physically unlocked.
 
-The Compose service uses host networking so `cloudflared` can reach an origin
-that is deliberately bound to `127.0.0.1`. It publishes no container ports and
-binds its metrics endpoint to loopback only. The connector runs as the local
-unprivileged UID/GID, with a read-only filesystem and all Linux capabilities
-dropped.
+Do not add `ufw allow 3000`, expose container port 3000, or create a router
+port-forward. `cloudflared` makes outbound connections to Cloudflare, normally
+on port 7844 over UDP (QUIC) or TCP (HTTP/2); it needs no inbound firewall rule.
+See Cloudflare's [tunnel firewall guidance][firewall].
 
-## 1. Prepare the local, non-secret settings
+## Reuse the existing Cloudflare deployment
+
+Reusing the existing hostname, Access application, DNS record, and named tunnel
+is preferable to creating parallel public infrastructure. A new public GitHub
+repository or a new tunnel is not required for this hardware migration.
+
+Before changing the connector, audit these dashboard settings without copying
+any credential into the repository:
+
+1. In **Zero Trust -> Access controls -> Applications**, open the existing
+   self-hosted application. Its hostname must be the intended assistant
+   hostname and its Allow policy must name only authorized identities.
+2. Remove any **Bypass** policy and any Allow rule using **Everyone** or an
+   unrestricted login-method selector. An exact-email rule may use a one-time
+   PIN login method; the unsafe configuration is allowing the login method
+   itself instead of the intended identity. Cloudflare documents these cases in
+   its [Access policy guide][policies].
+3. In **Networking -> Tunnels**, open the existing named tunnel and its
+   published application route. Set the service to
+   `http://127.0.0.1:3000` and enable **Protect with Access**.
+4. Keep the existing connector running only until Machine A has been prepared.
+   Two active replicas of one tunnel can both receive requests, so do not use
+   the public hostname as proof that a request reached Machine A while the old
+   connector is still online.
+
+If those resources are missing or cannot be recovered, follow the new-resource
+procedure below. Otherwise skip it and migrate the connector.
+
+### Migrate the connector to Machine A
+
+1. Confirm locally on Machine A that KevinBeLLM shows its application login:
+
+   ```bash
+   curl --fail --head http://127.0.0.1:3000/
+   ```
+
+2. Prepare the non-secret settings and token file as described below. Obtain
+   the existing tunnel's current token from **Add a replica** in the dashboard.
+   Paste it directly into Machine A's ignored token file; do not copy an old
+   `.env`, browser profile, or credentials directory from the retired host.
+3. Start the rootless connector on Machine A and wait for it to become healthy.
+   Confirm that a new connector ID appears as healthy on the tunnel overview.
+4. Stop and disable the connector on the old host. Then test the public hostname
+   again; with the old replica offline, this proves Machine A serves the request.
+5. Follow Cloudflare's [tunnel-token rotation procedure][tunnel-token], replace
+   Machine A's token file, and restart the connector. Because the old connector
+   was stopped first, it cannot establish a new connection with the rotated
+   token. Remove its old token file only after verifying the exact path and that
+   Machine A reconnects with the rotated token.
+
+If the old connector used this repository's proof-of-concept Compose project,
+stop that exact legacy project on its original host with:
+
+```bash
+./scripts/compose.sh \
+  -f infra/cloudflare/compose.yaml \
+  --env-file infra/cloudflare/.env \
+  -p asus-kevin-remote-access \
+  down
+```
+
+Run this only on the verified old checkout; the new Machine A project is named
+`kevinbellm-remote-access`.
+
+The dashboard work and secret entry require the account owner. This repository
+cannot safely automate them without introducing long-lived Cloudflare account
+credentials.
+
+## Create resources only when reuse is impossible
+
+Cloudflare's [self-hosted application guide][publish-app] recommends creating
+the Access application before its public tunnel route; otherwise the route is
+initially reachable without Access.
+
+1. In **Zero Trust -> Access controls -> Applications**, create a self-hosted
+   application for the intended assistant hostname.
+2. Add an Allow policy for only the exact owner email address(es) or narrowly
+   scoped identity-provider group. Set an appropriate session duration and use
+   MFA when the chosen identity provider supports it.
+3. Following the [named-tunnel setup][create-tunnel], create a remotely managed
+   tunnel with a durable name such as `kevinbellm-two-node`.
+4. Add a published application route for the same hostname with service
+   `http://127.0.0.1:3000`.
+5. Enable **Protect with Access** on that route so `cloudflared` validates the
+   Access application token on behalf of the origin.
+6. Use **Add a replica** to obtain the tunnel token for Machine A. Do not run a
+   generated root-level install command and do not paste its token into Git,
+   shell history, an issue, a screenshot, or a Pages build variable.
+
+`remote-route.example.yml` is a review worksheet for these dashboard values.
+It is not read by `cloudflared`.
+
+## Configure Machine A
+
+From the project checkout on Machine A:
 
 ```bash
 cd infra/cloudflare
@@ -63,139 +161,138 @@ id -u
 id -g
 ```
 
-Set `LOCAL_UID` and `LOCAL_GID` in `.env` to those outputs. Choose the final
-hostname and confirm the local KevinBeLLM origin. The hostname and origin values
-in `.env` are a worksheet for the dashboard; a remotely managed route is stored
-at Cloudflare rather than in this Compose file.
+Set `LOCAL_UID` and `LOCAL_GID` in `.env` to those numeric outputs. Set the
+worksheet hostname to the existing assistant hostname and leave the origin
+exactly `http://127.0.0.1:3000`. The token does not belong in `.env`.
 
-## 2. Create Access before publishing the route
+Also set the application's root `.env` `PUBLIC_URL` to that external HTTPS URL
+while retaining KevinBeLLM's application authentication.
 
-This ordering matters. Without an Access application, a published tunnel route
-is reachable by anyone who knows or discovers its hostname.
-
-1. In Cloudflare Zero Trust, open **Access controls → Applications**.
-2. Create a **Self-hosted and private** application and add the intended public
-   hostname, for example `assistant.example.com`.
-3. Add an **Allow** policy that includes only the exact owner email address(es)
-   or a narrowly scoped IdP group.
-4. Select the intended identity provider, set a sensible session duration, and
-   enable independent MFA if appropriate.
-5. Save the application before adding the tunnel's published application route.
-
-Do not use an Allow policy with **Everyone**, all valid emails, or an unrestricted
-one-time-PIN login. Do not create a Bypass rule for the application. Cloudflare
-documents these as common policy mistakes in its [Access policy guide][policies].
-Access applications deny by default; an authorized identity must match an Allow
-policy.
-
-## 3. Create the named tunnel and protected route
-
-1. In the Cloudflare dashboard, open **Networking → Tunnels**.
-2. Create a tunnel named `asus-kevin-llm` or another durable, descriptive name.
-3. Add a **Published application** route:
-   - Hostname: the same hostname protected by Access.
-   - Service: `http://127.0.0.1:3000`.
-4. Turn on **Protect with Access** for the route so `cloudflared` validates the
-   Access application token on behalf of the origin.
-5. On the tunnel overview, choose **Add a replica** and copy only the long
-   `eyJ...` tunnel token from the generated install command. Do not run that
-   generated command and do not paste the token into the repository.
-
-Cloudflare's public-hostname guide explicitly recommends creating Access before
-the route and validating the Access token at the origin or tunnel. See [Publish
-a self-hosted application][publish-app].
-
-## 4. Store the token outside version control
-
-Create the ignored token file without putting the token in shell history:
+Create the ignored token file without putting the token on a command line:
 
 ```bash
+install -d -m 700 secrets
 install -m 600 /dev/null secrets/tunnel-token
 ${EDITOR:-nano} secrets/tunnel-token
 ```
 
-Paste the token as the only line, save, then verify permissions without printing
-its contents:
+Paste the token as the only line, save it, and verify only metadata—not its
+contents:
 
 ```bash
 test -s secrets/tunnel-token
 test "$(stat -c '%a' secrets/tunnel-token)" = 600
+test "$(stat -c '%u' secrets/tunnel-token)" = "$(id -u)"
 ```
 
-The pinned connector supports `--token-file`; the token is mounted read-only at
-runtime. `.gitignore` excludes both the token and the local `.env` file. Never
-commit either file. Never paste the token into an issue, screenshot, log, or
-GitHub Actions variable intended for a public Pages build.
+The pinned connector supports [`--token-file`][run-parameters], so Compose
+receives only the secret's file path. `.gitignore` excludes `.env` and
+everything in `secrets/` except `.gitkeep`.
 
-## 5. Validate, then start intentionally
+## Validate and start
 
-Review the fully resolved configuration. This command must not display the
-tunnel token because Compose receives only its file path:
+Render the merged rootless-Podman configuration before starting it:
 
 ```bash
-../../scripts/compose.sh -f compose.yaml --env-file .env config
+../../scripts/compose.sh \
+  -f compose.yaml \
+  --env-file .env \
+  -p kevinbellm-remote-access \
+  config
 ```
 
-Confirm KevinBeLLM is healthy first:
+The output must show all of the following:
+
+- `network_mode: host` and no `ports` entry;
+- the origin is not present because the remotely managed route stores it at
+  Cloudflare;
+- metrics listen only on `127.0.0.1`;
+- `/run/secrets/tunnel-token` is a file mount or Compose secret reference, and
+  the token value itself is absent;
+- the rootless `keep-id` override is active.
+
+Start only after the Access policy and protected route have been reviewed:
 
 ```bash
-curl --fail --head http://127.0.0.1:3000/
+../../scripts/compose.sh \
+  -f compose.yaml \
+  --env-file .env \
+  -p kevinbellm-remote-access \
+  up -d
+../../scripts/compose.sh \
+  -f compose.yaml \
+  --env-file .env \
+  -p kevinbellm-remote-access \
+  ps
+../../scripts/compose.sh \
+  -f compose.yaml \
+  --env-file .env \
+  -p kevinbellm-remote-access \
+  logs --tail=100 cloudflared
 ```
 
-Only after Access, the named route, and the token file are ready:
+The service is healthy only when its loopback `/ready` endpoint reports an
+active tunnel connection. Keep log level at `info`; debug logging can contain
+request details.
+
+For automatic recovery after Machine A is powered on and its encrypted disk is
+physically unlocked, use the repository's remote systemd-user autostart flow:
 
 ```bash
-../../scripts/compose.sh -f compose.yaml --env-file .env up -d
-../../scripts/compose.sh -f compose.yaml --env-file .env ps
-../../scripts/compose.sh -f compose.yaml --env-file .env logs --tail=100 cloudflared
+cd ../..
+sudo loginctl enable-linger "$(id -un)"
+./scripts/install-autostart.sh remote
+systemctl --user start kevinbellm-remote.service
 ```
 
-The service is healthy only after its local `/ready` endpoint reports an active
-tunnel connection. This repository intentionally does not start the connector
-without owner-provided credentials.
+Full-disk encryption still requires physical unlock after a cold boot. Neither
+Cloudflare Tunnel nor systemd can bypass that prompt.
 
-## 6. Verify the gate
+## End-to-end acceptance test
 
-1. Open the assistant hostname in a private browser window. It must show a
-   Cloudflare Access authentication flow, not KevinBeLLM directly.
-2. Try an identity not included by the policy and confirm access is denied.
-3. Sign in with an allowed identity and confirm KevinBeLLM then requests or
+Perform this test from a device that is not relying on the home LAN path, such
+as a phone with Wi-Fi disabled:
+
+1. Open the assistant hostname in a private browser window. Cloudflare Access
+   must appear before KevinBeLLM.
+2. Try an identity outside the Allow policy and confirm it is denied.
+3. Sign in as an allowed identity and confirm KevinBeLLM then requires or
    recognizes its own application login.
-4. Start a short streamed response to verify WebSocket/streaming behavior.
-5. From another LAN device, verify that the laptop's port `3000` is not directly
-   reachable.
-6. Confirm every **Open assistant** link in `docs/index.html` uses the hostname
-   that just passed these Access checks.
+4. Start a short streamed answer and confirm the response completes.
+5. Sign out of both layers and confirm a new private session is challenged.
+6. From another LAN device, verify Machine A's port 3000 is not reachable by its
+   LAN address. Also verify there is no router port-forward for 3000, 8080, or
+   the llama.cpp RPC ports.
+7. Confirm every public **Open assistant** link uses only the hostname that
+   passed these checks.
 
-If an unauthenticated request ever reaches KevinBeLLM, stop the connector with
-`../../scripts/compose.sh -f compose.yaml --env-file .env down`, remove or disable the published route, and correct the
-Access application before trying again.
+If an unauthenticated request reaches KevinBeLLM, immediately stop the connector
+and disable or remove the published route before correcting Access:
+
+```bash
+../../scripts/compose.sh \
+  -f compose.yaml \
+  --env-file .env \
+  -p kevinbellm-remote-access \
+  down
+```
 
 ## Operations
 
-- Keep KevinBeLLM's own authentication enabled as defense in depth.
-- Rotate the named tunnel token periodically and immediately after suspected
-  exposure. Cloudflare supports refreshing it from the tunnel overview.
-- Keep `CLOUDFLARED_LOG_LEVEL=info`; debug logging can contain request details.
-- Upgrade the pinned image deliberately after reviewing Cloudflare release notes
-  and updating the image digest.
-- The connector needs outbound connectivity to Cloudflare, typically port 7844;
-  it does not require inbound firewall rules.
-- Stop remote access without disturbing the local assistant with
-  `../../scripts/compose.sh -f compose.yaml --env-file .env down` from this directory.
+- Keep KevinBeLLM's login enabled as defense in depth.
+- Rotate the named tunnel token after migration and immediately after suspected
+  exposure.
+- Upgrade the pinned image deliberately after reviewing Cloudflare release
+  notes and replacing both the tag and Linux/AMD64 digest.
+- Check connector health in the tunnel overview and locally with Compose `ps`.
+- Do not run a connector on Machine B and do not make Machine A's origin listen
+  on `0.0.0.0` merely to satisfy the tunnel.
+- Stopping the connector removes remote access without stopping local inference.
 
-## Alternative: shared container network
-
-Host networking is used here because the primary service is expected to publish
-KevinBeLLM on loopback. If `cloudflared` is later moved into the primary Compose
-project, it can instead share that project's private network and route directly
-to a service such as `http://assistant-web:3000`. In that design, remove
-`network_mode: host`, keep the metrics port unexposed, and update the remotely
-managed route. Do not make the origin port public merely to connect the two
-containers.
-
-[create-tunnel]: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/
-[tunnel-token]: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/remote-tunnel-permissions/
+[create-tunnel]: https://developers.cloudflare.com/tunnel/setup/
+[tunnel-token]: https://developers.cloudflare.com/tunnel/advanced/tunnel-tokens/
 [access-app]: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/
 [policies]: https://developers.cloudflare.com/cloudflare-one/access-controls/policies/
 [publish-app]: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/
+[firewall]: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-with-firewall/
+[run-parameters]: https://developers.cloudflare.com/tunnel/advanced/run-parameters/

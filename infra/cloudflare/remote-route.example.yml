@@ -1,8 +1,9 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Documentation worksheet only. Remotely managed tunnel routes and Access
 # policies are entered in the Cloudflare dashboard; cloudflared does not read
 # this file. Replace all example values before following README.md.
 tunnel:
-  name: asus-kevin-llm
+  name: kevinbellm-two-node
   public_hostname: assistant.example.com
   service: http://127.0.0.1:3000
   protect_with_access: true
@@ -17,4 +18,3 @@ access_application:
       - owner@example.com
     include_everyone: false
     bypass: false
-# SPDX-License-Identifier: AGPL-3.0-or-later

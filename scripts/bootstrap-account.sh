@@ -29,7 +29,7 @@ export ADMIN_NAME="${admin_name}" ADMIN_EMAIL="${admin_email}" ADMIN_PASSWORD="$
 "${project_dir}/scripts/compose.sh" \
   -f "${project_dir}/compose.yaml" \
   --env-file "${env_file}" \
-  -p asus-kevin-bellm \
+  -p kevinbellm \
   run --rm --no-deps \
   -e ADMIN_NAME -e ADMIN_EMAIL -e ADMIN_PASSWORD \
   assistant-web python -m app.bootstrap
