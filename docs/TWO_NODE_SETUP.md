@@ -380,6 +380,8 @@ cmake -S <llama.cpp-source> -B <build-dir> \
   -DGGML_BMI2=OFF \
   -DGGML_FMA=OFF \
   -DGGML_F16C=OFF \
+  -DLLAMA_BUILD_UI=OFF \
+  -DLLAMA_USE_PREBUILT_UI=OFF \
   -DBUILD_SHARED_LIBS=OFF \
   -DCMAKE_CUDA_ARCHITECTURES=86
 cmake --build <build-dir> --config Release -j
@@ -391,6 +393,9 @@ on these pre-AVX/AVX2 CPUs; the performance-critical model work remains on
 CUDA. At `b10451` the worker binary is named `ggml-rpc-server`, not
 `rpc-server`. Build separately on each host rather than copying a host-native
 binary between possibly different CPUs.
+Both UI flags are deliberate. At this revision, disabling the UI build alone
+still allows a prebuilt UI download; KevinBeLLM uses the server API and does
+not need those unpinned browser assets.
 
 Verify both installations before continuing:
 

@@ -123,12 +123,16 @@ GGML_AVX2=OFF
 GGML_BMI2=OFF
 GGML_FMA=OFF
 GGML_F16C=OFF
+LLAMA_BUILD_UI=OFF
+LLAMA_USE_PREBUILT_UI=OFF
 ```
 
 The explicit CPU baseline keeps the same binaries runnable on the older
 pre-AVX/AVX2 host CPUs; inference remains CUDA-backed. The remaining CMake
 flags are recorded in the build-spec file. Run the same script after a failed
-build; CMake and Ninja resume idempotently.
+build; CMake and Ninja resume idempotently. Both UI switches must remain off:
+the API does not need llama.cpp's embedded browser UI, and disabling only the
+UI build still permits an unpinned prebuilt-UI download at this revision.
 
 ## 4. Establish the restricted A-to-B tunnel identity
 

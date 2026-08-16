@@ -119,7 +119,9 @@ for required_build_spec in \
   'GGML_AVX2=OFF' \
   'GGML_BMI2=OFF' \
   'GGML_FMA=OFF' \
-  'GGML_F16C=OFF'; do
+  'GGML_F16C=OFF' \
+  'LLAMA_BUILD_UI=OFF' \
+  'LLAMA_USE_PREBUILT_UI=OFF'; do
   grep -qxF "${required_build_spec}" "${llama_dir}/KEVINBELLM_BUILD_SPEC.txt" || \
     cluster_die "Build spec is missing required setting: ${required_build_spec}"
 done

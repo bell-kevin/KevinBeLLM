@@ -105,6 +105,7 @@ cmake_args=(
   -DLLAMA_BUILD_EXAMPLES=OFF
   -DLLAMA_BUILD_TESTS=OFF
   -DLLAMA_BUILD_UI=OFF
+  -DLLAMA_USE_PREBUILT_UI=OFF
   -DLLAMA_OPENSSL=OFF
 )
 
@@ -135,6 +136,7 @@ done
   printf '%s\n' 'LLAMA_BUILD_EXAMPLES=OFF'
   printf '%s\n' 'LLAMA_BUILD_TESTS=OFF'
   printf '%s\n' 'LLAMA_BUILD_UI=OFF'
+  printf '%s\n' 'LLAMA_USE_PREBUILT_UI=OFF'
   printf '%s\n' 'LLAMA_OPENSSL=OFF'
   sha256sum \
     "${build_dir}/bin/llama-server" \
