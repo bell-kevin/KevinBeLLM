@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[Unit]
+Description=KevinBeLLM document retrieval API on Machine B
+Wants=network-online.target kevinbellm-embedding.service kevinbellm-reranker.service
+After=network-online.target kevinbellm-embedding.service kevinbellm-reranker.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=@SERVICE_DIR@
+EnvironmentFile=@RETRIEVAL_ENV@
+# The service reads its index at startup and never writes to it. Both model
+# endpoints and this listener are loopback-only and are fixed here, not in the
+# private env file.
+Environment=EMBEDDING_BASE_URL=http://127.0.0.1:8081
+Environment=RERANKER_BASE_URL=http://127.0.0.1:8082
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@VENV_PYTHON@ -m uvicorn app.main:app --host 127.0.0.1 --port 8091 --no-server-header --log-level warning
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=120
+TimeoutStopSec=30
+UMask=0077
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+# The index and the service virtual environment are read-only to this unit.
+ProtectHome=read-only
+ProtectControlGroups=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+# Ubuntu's user manager rejects capability-changing directives such as
+# CapabilityBoundingSet=, ProtectClock=, ProtectKernelModules=, and
+# ProtectKernelLogs= with status 218/CAPABILITIES.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+InaccessiblePaths=-%h/.ssh -%h/.gnupg
+
+[Install]
+WantedBy=default.target

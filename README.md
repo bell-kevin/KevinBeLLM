@@ -18,8 +18,9 @@ Remote browser
                 Qwen3.5-9B Q6_K fully on the RTX 3060 12 GiB
 ```
 
-Machine B's RTX 3070 remains available for maintenance, experiments, or the
-explicitly optional 27B two-node profile. Normal service does not depend on
+Machine B's RTX 3070 remains available for maintenance, experiments, the
+optional document-retrieval profile, or the explicitly optional 27B two-node
+profile. Normal service does not depend on
 Machine B and starts no llama.cpp RPC process, tunnel, or listener. The app and
 model API are not published directly to the LAN or Internet; SSH is the only
 LAN-facing administration service, and remote web traffic arrives through an
@@ -36,7 +37,7 @@ through KevinBeLLM's own login.
 | Role | GPU | Nominal VRAM | Workload |
 | --- | --- | ---: | --- |
 | Machine A, primary | NVIDIA GeForce RTX 3060 | 12 GiB | App and fully GPU-resident everyday model |
-| Machine B, optional | NVIDIA GeForce RTX 3070 | 8 GiB | Maintenance and deliberate two-node experiments |
+| Machine B, optional | NVIDIA GeForce RTX 3070 | 8 GiB | Maintenance, optional document retrieval, and deliberate two-node experiments |
 
 Both GPUs are Ampere devices with CUDA compute capability 8.6, so they use the
 same pinned llama.cpp source revision and CUDA build configuration. Their 20
@@ -90,6 +91,10 @@ standalone installation. It covers:
 - checksum-verified model installation;
 - KevinBeLLM startup, validation, benchmarking, and rollback;
 - an outbound Cloudflare Tunnel protected by Cloudflare Access.
+
+The same guide covers the optional [Machine B document-retrieval
+profile](infra/cluster/README.md#optional-machine-b-document-retrieval), which
+gives the RTX 3070 a job of its own rather than a share of Machine A's job.
 
 The much longer [two-node setup guide](docs/TWO_NODE_SETUP.md) is retained for
 the optional 27B RPC experiment; it is not required for normal operation.
@@ -180,6 +185,31 @@ Qwen3.5's extended thinking is off by default and enabled per request with the
 is on, the thinking text streams into a collapsible block above the answer. Both
 modes fit the 32,768-token context.
 
+## Optional private document search
+
+Machine B's RTX 3070 can host a `search_documents` tool over an index of your
+own files: bge-m3 embeddings, dense search, and bge-reranker-v2-m3 reranking all
+run there, and Machine A issues one HTTP request per tool call over a loopback
+SSH forward. It uses no llama.cpp RPC.
+
+The feature is off unless `DOC_RETRIEVAL_URL` is set. While it is off the
+assistant advertises no document tool and sends a byte-identical system prompt,
+so a deployment without Machine B pays nothing for a capability it does not
+have. While it is on, the added cost to Machine A is about 150 prompt tokens
+per turn — roughly 0.1 s of prefill — plus one bounded round trip when the model
+actually calls the tool. Generation speed is unchanged either way.
+
+Because Machine B may sit powered off behind full-disk encryption for days, an
+unreachable worker is capped at a 2 s connect budget, and three consecutive
+failures stop the calls entirely for a 120 s cooldown. A retrieval failure is an
+ordinary tool error: the model answers from other sources and says local
+documents were not searched.
+
+Local files have no public URL, so document results are cited inline by name and
+contribute nothing to the browser's citation card, which only ever renders vetted
+public `http(s)` links. Setup lives in
+[infra/cluster/README.md](infra/cluster/README.md#optional-machine-b-document-retrieval).
+
 ## Project layout
 
 - `services/assistant-web/` — authenticated FastAPI assistant with a llama.cpp
@@ -187,6 +217,9 @@ modes fit the 32,768-token context.
 - `services/live-tools/` — small read-only FastAPI tool service: Open-Meteo
   weather and forecast, and Hugging Face model discovery. It has no shell,
   filesystem, model-download, email, or account tools.
+- `services/doc-retrieval/` — optional Machine B service: dense retrieval over
+  your own documents, with bge-m3 embeddings and bge-reranker-v2-m3 reranking on
+  the RTX 3070. Machine A never installs or runs it.
 - `scripts/` — Machine A lifecycle helpers: setup, start, status, doctor, stop,
   autostart installation, and container-engine selection.
 - `scripts/cluster/` — Ubuntu preparation, SSH hardening, pinned builds, model
@@ -215,18 +248,25 @@ digests and no persisted credentials. It installs the assistant's locked test
 dependencies with `--require-hashes` and then runs:
 
 - `pytest` for the assistant service;
+- `pytest` for the optional Machine B retrieval service, against Python 3.12 to
+  match Ubuntu 24.04 and its hash-pinned lock;
 - `node --test` for the browser Markdown renderer;
 - `bash -n` over every tracked shell script, and a PowerShell parse check over
   the Windows administration scripts;
 - `scripts/check-standalone-contract.sh`, which pins the standalone unit's
   inference settings and its no-RPC security invariants, so retuning inference
-  fails the build until the expected values are updated deliberately;
+  fails the build until the expected values are updated deliberately, and which
+  also fails if that unit ever gains a retrieval argument or dependency;
+- `scripts/check-retrieval-contract.sh`, which pins the optional retrieval
+  profile: loopback-only endpoints, no RPC, pinned model digests, an SSH key
+  restricted to one forward, the application default staying off, and no
+  dependency that could make Machine A wait on Machine B;
 - `scripts/check-public-tree.sh`, which fails if a private runtime file, model,
   database, key, host-trust file, or tunnel-token-shaped credential is ever
   tracked.
 
 The same checks run locally from the repository root. The Python tests need the
-locked development dependencies in the active environment; the other three need
+locked development dependencies in the active environment; the other four need
 nothing installed:
 
 ```bash
@@ -234,7 +274,18 @@ python -m pip install --require-hashes -r services/assistant-web/requirements-de
 (cd services/assistant-web && python -m pytest -q)
 node --test services/assistant-web/tests/markdown.test.mjs
 ./scripts/check-standalone-contract.sh
+./scripts/check-retrieval-contract.sh
 ./scripts/check-public-tree.sh
+```
+
+The optional retrieval suite uses its own environment, because its lock targets
+Machine B's Python version rather than the assistant's:
+
+```bash
+/usr/bin/python3 -m venv .venv-doc-retrieval
+.venv-doc-retrieval/bin/python -m pip install --require-hashes \
+  -r services/doc-retrieval/requirements-dev.lock
+(cd services/doc-retrieval && ../../.venv-doc-retrieval/bin/python -m pytest -q)
 ```
 
 ## License and public source

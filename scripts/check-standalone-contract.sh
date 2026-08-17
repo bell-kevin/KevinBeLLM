@@ -72,6 +72,16 @@ for setting in \
   require_text "${standalone_unit}" "${setting}"
 done
 
+# The optional Machine B retrieval profile must leave the everyday inference
+# unit completely alone: no extra resident model, no extra argument, and no
+# ordering relationship that could delay Machine A's start.
+for forbidden in '--embedding' '--reranking' 'retrieval' 'DOC_RETRIEVAL' '8091'; do
+  ! grep -Fq -- "${forbidden}" "${standalone_unit}" || \
+    fail "standalone unit references ${forbidden}; Machine A must not host or await retrieval"
+done
+! grep -Eq '^(Requires|Requisite|BindsTo|PartOf|After|Wants)=.*(retrieval|embedding|reranker)' "${standalone_unit}" || \
+  fail 'standalone unit is ordered against a Machine B retrieval unit'
+
 [[ "${rpc_exec}" == *'--rpc 127.0.0.1:50053'* ]] || fail 'optional coordinator lost its loopback RPC endpoint'
 [[ "${rpc_exec}" == *'--no-agent'* ]] || fail 'optional coordinator does not disable llama.cpp agent mode'
 [[ "${rpc_exec}" == *'--offline'* ]] || fail 'optional coordinator does not force offline mode'

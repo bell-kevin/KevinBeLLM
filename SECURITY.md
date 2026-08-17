@@ -24,15 +24,29 @@ Every application and inference port binds to loopback:
 | 50053 | optional SSH-forwarded RPC endpoint on Machine A | `127.0.0.1` only |
 | 8090 | read-only live tools | `127.0.0.1` only |
 | 8888 | SearXNG | `127.0.0.1` only |
+| 8081 | optional embedding `llama-server` on Machine B | `127.0.0.1` only |
+| 8082 | optional reranking `llama-server` on Machine B | `127.0.0.1` only |
+| 8091 | optional retrieval API on Machine B, SSH-forwarded to Machine A | `127.0.0.1` only |
 
 The Windows laptop reaches port 3000 through an SSH local forward. Everyday
 inference uses only Machine A and has no listener on 50052 or 50053. The
 optional two-node profile reaches Machine B's loopback RPC socket through a
 separate, restricted SSH local forward. Never port-forward ports 3000, 8080,
-50052, 50053, 8090, 8888, or 11434 on the home router. SSH itself should use
+8081, 8082, 8091, 50052, 50053, 8090, 8888, or 11434 on the home router. SSH
+itself should use
 keys only and be limited by the host firewall to the trusted home subnet; use a
 VPN rather than an Internet-facing router rule if remote administration is
 later needed.
+
+The optional document-retrieval profile uses no RPC. Its three services bind
+Machine B loopback only, and Machine A reaches port 8091 through a restricted
+SSH local forward whose key has its own account, cannot request a shell, and
+cannot open anything except `127.0.0.1:8091`. It is a separate key and account
+from the RPC tunnel by design: enabling document retrieval must never enable the
+RPC parser, and revoking one must not revoke the other. The installers refuse to
+reuse one key for both. The retrieval index contains extracted private document
+text in plain form, so it is written mode 0600 inside a mode 0700 directory;
+treat that directory as sensitive and keep it off synchronised storage.
 
 The optional browser-facing Cloudflare path must use a named Tunnel protected
 by Cloudflare Access and then the application's own login. Do not point GitHub

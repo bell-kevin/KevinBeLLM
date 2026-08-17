@@ -18,6 +18,14 @@ services:
       INFERENCE_BASE_URL: "${INFERENCE_BASE_URL:-http://127.0.0.1:8080}"
       SEARXNG_URL: "http://127.0.0.1:${SEARXNG_HOST_PORT:-8888}"
       LIVE_TOOLS_URL: "http://127.0.0.1:${LIVE_TOOLS_HOST_PORT:-8090}"
+      # Optional Machine B document retrieval, reached through the loopback SSH
+      # forward. Empty disables it: no document tool is advertised to the model
+      # and the prompt is unchanged.
+      DOC_RETRIEVAL_URL: "${DOC_RETRIEVAL_URL:-}"
+      DOC_RETRIEVAL_TIMEOUT_SECONDS: "${DOC_RETRIEVAL_TIMEOUT_SECONDS:-8}"
+      DOC_RETRIEVAL_MAX_RESULTS: "${DOC_RETRIEVAL_MAX_RESULTS:-5}"
+      DOC_RETRIEVAL_FAILURE_THRESHOLD: "${DOC_RETRIEVAL_FAILURE_THRESHOLD:-3}"
+      DOC_RETRIEVAL_COOLDOWN_SECONDS: "${DOC_RETRIEVAL_COOLDOWN_SECONDS:-120}"
       DEFAULT_MODEL: "${DEFAULT_MODEL:-kevinbellm-9b}"
       PREFERRED_MODELS: "${PREFERRED_MODELS:-kevinbellm-9b,kevinbellm-27b}"
       OLLAMA_CONTEXT_LENGTH: "${OLLAMA_CONTEXT_LENGTH:-16384}"
