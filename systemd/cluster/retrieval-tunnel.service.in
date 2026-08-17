@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[Unit]
+Description=KevinBeLLM encrypted loopback tunnel to Machine B document retrieval
+Documentation=man:ssh(1)
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+# Deliberately no Requires=/Before= relationship with kevinbellm-llama.service
+# or the application. Machine B is optional: this unit failing must never delay
+# or block Machine A's inference, application, or Cloudflare connector.
+
+[Service]
+Type=simple
+EnvironmentFile=@RETRIEVAL_CLIENT_ENV@
+# Carries ordinary HTTP to a read-only search API. This is not the llama.cpp
+# RPC parser and needs no risk acknowledgment, but the key is still restricted
+# to one forward by Machine B's sshd configuration.
+ExecStart=/usr/bin/ssh -NT -o BatchMode=yes -o ExitOnForwardFailure=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=@RETRIEVAL_KNOWN_HOSTS@" -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ConnectTimeout=10 -i "@RETRIEVAL_TUNNEL_KEY@" -p ${RETRIEVAL_SSH_PORT} -L 127.0.0.1:8091:127.0.0.1:8091 ${RETRIEVAL_SSH_TARGET}
+Restart=always
+RestartSec=30
+TimeoutStartSec=30
+TimeoutStopSec=15
+UMask=0077
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectControlGroups=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=default.target

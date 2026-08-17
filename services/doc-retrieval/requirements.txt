@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Machine B only. Machine A never installs or runs this service.
+fastapi==0.141.1
+httpx==0.28.1
+numpy==2.3.4
+starlette==1.6.0
+uvicorn==0.52.1

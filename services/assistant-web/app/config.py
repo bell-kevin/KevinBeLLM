@@ -36,6 +36,30 @@ def _http_url(name: str, default: str, *, loopback_only: bool = False) -> str:
     return value
 
 
+def _optional_http_url(name: str, *, loopback_only: bool = False) -> str:
+    """Return a validated URL, or "" when the feature is switched off.
+
+    Retrieval is opt-in. An unset value must stay an ordinary disabled state
+    rather than a configuration error, because Machine B is not a dependency
+    of everyday service.
+    """
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return ""
+    return _http_url(name, raw, loopback_only=loopback_only)
+
+
+def _bounded_float(name: str, default: float, minimum: float, maximum: float) -> float:
+    raw = os.getenv(name, str(default))
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be a number") from exc
+    if not minimum <= value <= maximum:
+        raise RuntimeError(f"{name} must be between {minimum} and {maximum}")
+    return value
+
+
 def _inference_backend() -> str:
     configured = os.getenv("INFERENCE_BACKEND")
     if configured is not None:
@@ -118,6 +142,28 @@ class Settings:
     # Defaults keep keyword construction by older callers source-compatible.
     inference_backend: str = "llamacpp"
     inference_base_url: str | None = None
+    # Optional Machine B document retrieval. An empty URL disables the feature
+    # entirely: no tool definition is advertised, so a disabled deployment sends
+    # exactly the prompt it sends today.
+    doc_retrieval_url: str = ""
+    doc_retrieval_timeout_seconds: float = 8.0
+    doc_retrieval_max_results: int = 5
+    doc_retrieval_failure_threshold: int = 3
+    doc_retrieval_cooldown_seconds: int = 120
+
+    @property
+    def doc_retrieval_enabled(self) -> bool:
+        return bool(self.doc_retrieval_url)
+
+    @property
+    def doc_retrieval_connect_timeout_seconds(self) -> float:
+        """Fail fast when Machine B is unlocked-but-unreachable.
+
+        A powered-off Machine B refuses the forwarded port immediately, but a
+        half-open SSH forward can hang. Capping the connect phase well below the
+        overall deadline bounds what a dead worker can add to one tool call.
+        """
+        return min(2.0, self.doc_retrieval_timeout_seconds)
 
 
 def load_settings() -> Settings:
@@ -166,6 +212,17 @@ def load_settings() -> Settings:
         ),
         inference_backend=inference_backend,
         inference_base_url=inference_base_url,
+        doc_retrieval_url=_optional_http_url("DOC_RETRIEVAL_URL", loopback_only=True),
+        doc_retrieval_timeout_seconds=_bounded_float(
+            "DOC_RETRIEVAL_TIMEOUT_SECONDS", 8.0, 1.0, 60.0
+        ),
+        doc_retrieval_max_results=_bounded_int("DOC_RETRIEVAL_MAX_RESULTS", 5, 1, 10),
+        doc_retrieval_failure_threshold=_bounded_int(
+            "DOC_RETRIEVAL_FAILURE_THRESHOLD", 3, 1, 20
+        ),
+        doc_retrieval_cooldown_seconds=_bounded_int(
+            "DOC_RETRIEVAL_COOLDOWN_SECONDS", 120, 5, 3_600
+        ),
     )
 
 

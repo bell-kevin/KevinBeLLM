@@ -12,7 +12,7 @@ from typing import Any
 import httpx
 
 from .config import Settings
-from .tools import TOOL_DEFINITIONS, ToolError, ToolRunner
+from .tools import ToolError, ToolRunner, tool_definitions
 
 
 MAX_OLLAMA_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -275,8 +275,21 @@ def _format_parameter_count(value: Any) -> str | None:
     return str(value)
 
 
-def _system_prompt() -> str:
+def _system_prompt(settings: Settings | None = None) -> str:
     today = datetime.now(UTC).date().isoformat()
+    # Only describe the document tool when it exists. This paragraph is prompt
+    # tokens that Machine A's GPU prefills on every single turn, so a deployment
+    # without Machine B must not pay for a capability it does not have.
+    documents = ""
+    if settings is not None and getattr(settings, "doc_retrieval_url", ""):
+        documents = (
+            "\nUse search_documents for questions about the user's own notes, files, and "
+            "records; it searches a private index of their documents held on their own "
+            "hardware. It is not a web search and does not know about public topics. If "
+            "it reports that the index is unavailable, answer without it and say the "
+            "local documents were not searched. Cite the document name inline; the "
+            "source list below your answer only ever shows public web URLs.\n"
+        )
     return f"""You are KevinBeLLM, a private assistant running on the user's own hardware.
 Today in UTC is {today}.
 
@@ -288,7 +301,7 @@ called. You have no shell, filesystem, account, email, installation, or arbitrar
 access. Cite the public URL inline for factual claims derived from a search result or fetched
 page. The interface already lists every retrieved source beneath your answer, so never end a
 reply with a "Sources:" list of your own.
-
+{documents}
 The interface renders a small Markdown subset: paragraphs, `-` bullets, numbered lists, #
 headings, **bold**, *italic*, `code`, fenced code blocks, blockquotes, and [links](https://url).
 Tables, images, and raw HTML are not rendered, so express that content as prose or lists.
@@ -450,7 +463,7 @@ async def _chat_once(
             body["chat_template_kwargs"] = {"enable_thinking": False}
         endpoint = f"{base_url}/v1/chat/completions"
     if include_tools:
-        body["tools"] = TOOL_DEFINITIONS
+        body["tools"] = tool_definitions(settings)
         if backend == "llamacpp":
             body["tool_choice"] = "auto"
     if streaming and on_delta is not None:
@@ -491,7 +504,7 @@ async def run_chat(
     reasoning: bool = False,
 ) -> tuple[str, list[dict[str, str]]]:
     conversation: list[dict[str, Any]] = [
-        {"role": "system", "content": _system_prompt()},
+        {"role": "system", "content": _system_prompt(settings)},
         *user_messages,
     ]
     runner = ToolRunner(client, settings)
