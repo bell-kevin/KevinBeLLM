@@ -67,11 +67,18 @@ wait_for_http \
 
 "${project_dir}/scripts/bootstrap-account.sh"
 
+# The services come up one at a time so the readiness checks below gate each
+# step. --remove-orphans must not appear on a service-scoped `up`: podman-compose
+# counts every service not named on the command line as an orphan and deletes it,
+# so `up --remove-orphans assistant-web` tears down the live-tools container this
+# step just started and then fails its own depends_on, leaving nothing running.
+# Project-wide pruning stays in stop.sh, where `down --remove-orphans` names no
+# service and is safe.
 "${project_dir}/scripts/compose.sh" \
   -f "${project_dir}/compose.yaml" \
   --env-file "${project_dir}/.env" \
   -p kevinbellm \
-  up --detach --remove-orphans live-tools
+  up --detach live-tools
 
 wait_for_http "Structured tools" "http://127.0.0.1:${tools_port}/health"
 
@@ -79,7 +86,7 @@ wait_for_http "Structured tools" "http://127.0.0.1:${tools_port}/health"
   -f "${project_dir}/compose.yaml" \
   --env-file "${project_dir}/.env" \
   -p kevinbellm \
-  up --detach --remove-orphans assistant-web
+  up --detach assistant-web
 
 wait_for_http "KevinBeLLM" "http://127.0.0.1:${app_port}/health"
 
