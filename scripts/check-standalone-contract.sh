@@ -27,7 +27,6 @@ standalone_exec="$(grep '^ExecStart=' "${standalone_unit}")"
 # the smaller 8 GiB card, which cannot hold the model plus its KV cache.
 [[ "${standalone_exec}" == 'ExecStart=/usr/bin/env -i CUDA_DEVICE_ORDER=PCI_BUS_ID '* ]] || \
   fail 'server does not launch with a cleared environment and PCI-ordered CUDA devices'
-[[ "${standalone_exec}" != *'--rpc'* ]] || fail 'ExecStart contains --rpc'
 [[ "${standalone_exec}" == *'--host 127.0.0.1 --port 8080'* ]] || \
   fail 'endpoint is not fixed to IPv4 loopback'
 for argument in \
@@ -54,9 +53,7 @@ for argument in \
   '--cache-reuse ${KEVINBELLM_LLAMA_CACHE_REUSE}'; do
   [[ "${standalone_exec}" == *"${argument}"* ]] || fail "ExecStart is missing ${argument}"
 done
-! grep -Eq '^(Requires|After)=.*rpc' "${standalone_unit}" || fail 'unit depends on RPC'
-! grep -Fq 'ACKNOWLEDGE_LLAMA_RPC_RCE' "${standalone_unit}" || fail 'unit has an RPC gate'
-require_text "${standalone_unit}" 'UnsetEnvironment=XDG_CONFIG_HOME HOME LLAMA_ARG_RPC LLAMA_ARG_RPC_SERVERS LLAMA_ARG_HF_REPO LLAMA_ARG_HF_FILE LLAMA_ARG_MODEL_URL LLAMA_ARG_DOCKER_REPO LLAMA_ARG_MODELS_PRESET LLAMA_ARG_MODELS_DIR'
+require_text "${standalone_unit}" 'UnsetEnvironment=XDG_CONFIG_HOME HOME LLAMA_ARG_HF_REPO LLAMA_ARG_HF_FILE LLAMA_ARG_MODEL_URL LLAMA_ARG_DOCKER_REPO LLAMA_ARG_MODELS_PRESET LLAMA_ARG_MODELS_DIR'
 require_text "${standalone_unit}" 'InaccessiblePaths=-%h/.ssh -%h/.gnupg -%h/.config -/etc/llama.cpp'
 for setting in \
   'Environment=KEVINBELLM_LLAMA_CTX_SIZE=32768' \
@@ -78,45 +75,52 @@ for setting in \
   require_text "${standalone_unit}" "${setting}"
 done
 
-# There is one host. Nothing may reintroduce a second-machine dependency.
-for forbidden in '--embedding' '--reranking' 'retrieval' 'DOC_RETRIEVAL' '8091'; do
-  ! grep -Fq -- "${forbidden}" "${standalone_unit}" || \
-    fail "unit references ${forbidden}; this deployment has one host"
-done
-
 require_text scripts/cluster/download-model.sh "preset='27b-iq4_xs'"
+require_text scripts/cluster/download-model.sh "model_repo='unsloth/Qwen3.8-27B-GGUF'"
 require_text scripts/cluster/download-model.sh "model_revision='4ca720788d1e01f1bff70c033e0d0028fd02e502'"
+require_text scripts/cluster/download-model.sh "model_filename='Qwen3.8-27B-UD-IQ4_XS.gguf'"
 require_text scripts/cluster/download-model.sh "model_bytes='14252845984'"
 require_text scripts/cluster/download-model.sh "model_sha256='40fac4050e940397dbf13087afd50f4734a11805bf9d65ef8ddd7483470e6199'"
-require_text scripts/cluster/download-model.sh "model_revision='182be2fd6c7bc44887d88a91cb03ff009cc9f549'"
-require_text scripts/cluster/download-model.sh "model_bytes='7958818848'"
 require_text scripts/cluster/download-model.sh 'chmod 600 "${output_file}"'
 require_text scripts/cluster/download-model.sh 'Refusing model output-directory symlink:'
-require_text scripts/cluster/install-services.sh 'MODEL_PRESET must be 27b-iq4_xs or 9b-q6_k'
+supported_preset_count="$(awk '
+  /^case "\$\{preset\}" in$/ { in_preset_case = 1; next }
+  in_preset_case && /^esac$/ { exit }
+  in_preset_case && /^  [[:alnum:]_-]+\)$/ { count++ }
+  END { print count + 0 }
+' scripts/cluster/download-model.sh)"
+[[ "${supported_preset_count}" == '1' ]] || \
+  fail "download helper supports ${supported_preset_count} presets instead of exactly one"
+require_text scripts/cluster/install-services.sh 'MODEL_PRESET must be 27b-iq4_xs'
+require_text scripts/cluster/install-services.sh 'LLAMA_MODEL_ALIAS must be kevinbellm-27b'
 require_text scripts/cluster/install-services.sh 'Model file not found:'
-require_text scripts/cluster/install-services.sh 'kevinbellm-rpc-tunnel.service'
-require_text scripts/cluster/install-services.sh 'kevinbellm-rpc-worker.service'
-require_text scripts/cluster/install-services.sh 'systemctl --user disable --now "${unsafe_unit}"'
-require_text scripts/cluster/install-services.sh 'Could not disable every prior inference/RPC unit'
-require_text scripts/cluster/install-services.sh 'for rpc_port in 50052 50053; do'
-require_text scripts/cluster/install-services.sh 'Refusing to install while an RPC port remains open.'
+require_text scripts/cluster/install-llama-cpp.sh '-DGGML_RPC=OFF'
+require_text scripts/cluster/install-llama-cpp.sh "'GGML_RPC=OFF'"
+require_text scripts/cluster/install-llama-cpp.sh 'for binary in llama-server llama-cli llama-bench; do'
+require_text scripts/cluster/install-llama-cpp.sh "'GGML_RPC:BOOL=ON'"
+require_text scripts/cluster/install-llama-cpp.sh '[[ ! -e "${build_dir}/bin/ggml-rpc-server" ]]'
+! grep -Fq -- '-DGGML_RPC=ON' scripts/cluster/install-llama-cpp.sh || \
+  fail 'llama.cpp build enables RPC'
+! grep -Eq 'cmake --build .*--target.*ggml-rpc-server' scripts/cluster/install-llama-cpp.sh || \
+  fail 'llama.cpp build targets the RPC server binary'
+require_text scripts/cluster/install-services.sh "'GGML_RPC=OFF'"
+require_text scripts/cluster/install-services.sh '[[ ! -e "${llama_dir}/build/bin/ggml-rpc-server" ]]'
 require_text scripts/cluster/install-services.sh 'sudo loginctl enable-linger "${USER}"'
 require_text scripts/cluster/cluster-status.sh 'curl --silent --show-error --fail-with-body --max-time 5'
 
-# Leftover RPC units must be disabled before any fallible env/model/build check,
-# so a failed install cannot leave one enabled for the next boot.
-shutdown_line="$(grep -n -m1 'for unsafe_unit in' scripts/cluster/install-services.sh | cut -d: -f1)"
-env_check_line="$(grep -n -m1 'z "${env_file}"' scripts/cluster/install-services.sh | cut -d: -f1)"
-build_check_line="$(grep -n -m1 'd "${llama_dir}"' scripts/cluster/install-services.sh | cut -d: -f1)"
-[[ -n "${shutdown_line}" && -n "${env_check_line}" && -n "${build_check_line}" ]] || \
-  fail 'could not locate fail-closed ordering checks'
-((shutdown_line < env_check_line && shutdown_line < build_check_line)) || \
-  fail 'install disables old RPC-capable units only after a fallible env/build check'
+for runtime_file in \
+  "${standalone_unit}" \
+  scripts/cluster/cluster-status.sh \
+  scripts/cluster/harden-ssh.sh; do
+  ! grep -Eqi -- '--rpc|ggml-rpc-server|50052|50053|rpc-(tunnel|worker)|LLAMA_ARG_RPC' "${runtime_file}" || \
+    fail "${runtime_file} retains an RPC runtime reference"
+done
 
 require_text .env.example 'DEFAULT_MODEL=kevinbellm-27b'
-require_text .env.example 'PREFERRED_MODELS=kevinbellm-9b,kevinbellm-27b'
+require_text .env.example 'PREFERRED_MODELS=kevinbellm-27b'
 require_text .env.example 'CHAT_CONCURRENCY=1'
 require_text compose.yaml 'DEFAULT_MODEL: "${DEFAULT_MODEL:-kevinbellm-27b}"'
+require_text compose.yaml 'PREFERRED_MODELS: "${PREFERRED_MODELS:-kevinbellm-27b}"'
 require_text compose.yaml 'CHAT_CONCURRENCY: "${CHAT_CONCURRENCY:-1}"'
 require_text infra/cluster/standalone.example.env 'MODEL_PRESET=27b-iq4_xs'
 require_text infra/cluster/standalone.example.env 'LLAMA_MODEL_ALIAS=kevinbellm-27b'

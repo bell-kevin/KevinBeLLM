@@ -6,19 +6,14 @@ programs, model weights, data, and hosted services retain their own terms. They
 are not relicensed by this repository.
 
 The table inventories this deployment.
-The application retains an explicit legacy Ollama API adapter, but this
-repository neither installs nor pins an Ollama runtime or Ollama-hosted model
-artifact for the new deployment.
 
 ## Software and model components
 
 | Component | Pinned/recommended version | Upstream license | Source |
 |---|---|---|---|
 | llama.cpp | `b10451` | MIT | <https://github.com/ggml-org/llama.cpp/tree/b10451> |
-| Qwen3.5 9B weights | official revision `c202236235762e1c871ad0ccb60c8ee5ba337b9a` | Apache-2.0 | <https://huggingface.co/Qwen/Qwen3.5-9B/tree/c202236235762e1c871ad0ccb60c8ee5ba337b9a> |
-| Qwen3.5 9B Q6_K GGUF | `bartowski/Qwen_Qwen3.5-9B-GGUF` revision `182be2fd6c7bc44887d88a91cb03ff009cc9f549` | Apache-2.0 | <https://huggingface.co/bartowski/Qwen_Qwen3.5-9B-GGUF/tree/182be2fd6c7bc44887d88a91cb03ff009cc9f549> |
-| Qwen3.5 27B weights | official base | Apache-2.0 | <https://huggingface.co/Qwen/Qwen3.5-27B> |
-| Qwen3.5 27B Q4_K_M GGUF | `bartowski/Qwen_Qwen3.5-27B-GGUF` revision `d7b113c40283f4d99f4eb0ec20d126ad653cc736` | Apache-2.0 | <https://huggingface.co/bartowski/Qwen_Qwen3.5-27B-GGUF/tree/d7b113c40283f4d99f4eb0ec20d126ad653cc736> |
+| Qwen3.8 27B weights | official base | Apache-2.0 | <https://huggingface.co/Qwen/Qwen3.8-27B> |
+| Qwen3.8 27B UD-IQ4_XS GGUF | `unsloth/Qwen3.8-27B-GGUF` revision `4ca720788d1e01f1bff70c033e0d0028fd02e502` | Apache-2.0 | <https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/tree/4ca720788d1e01f1bff70c033e0d0028fd02e502> |
 | SearXNG | commit `c01178d03` | AGPL-3.0-or-later | <https://github.com/searxng/searxng/tree/c01178d03> |
 | hyper-h2 | 4.4.1 security overlay | MIT | <https://github.com/python-hyper/h2/tree/v4.4.1> |
 | cloudflared client | 2026.7.3 | Apache-2.0 | <https://github.com/cloudflare/cloudflared/tree/2026.7.3> |
@@ -42,12 +37,8 @@ versions. Each dependency retains its upstream license.
 The everyday GGUF is `Qwen3.8-27B-UD-IQ4_XS.gguf`, exactly 14,252,845,984
 bytes with SHA-256
 `40fac4050e940397dbf13087afd50f4734a11805bf9d65ef8ddd7483470e6199`.
-The smaller fallback GGUF is `Qwen_Qwen3.5-9B-Q6_K.gguf`, exactly 7,958,818,848
-bytes with SHA-256
-`073a9275e65d9c8cd2819cf5f77b99fbaa6e87ba591da6bbaa86ec073a64bfef`.
-The download helper pins both immutable repository revisions and refuses
-artifacts that do not match both their byte count and digest.
-
+The download helper pins its immutable repository revision and refuses the
+artifact unless both its byte count and digest match.
 
 The model repository metadata and exact GGUF artifact should be checked again
 before redistributing model blobs. Every model discovered through Hugging Face

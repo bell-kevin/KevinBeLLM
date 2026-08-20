@@ -37,6 +37,7 @@
     accountAvatar: document.getElementById("accountAvatar"),
     changePasswordButton: document.getElementById("changePasswordButton"),
     logoutButton: document.getElementById("logoutButton"),
+    fastToggle: document.getElementById("fastToggle"),
     reasoningToggle: document.getElementById("reasoningToggle"),
     composerNote: document.getElementById("composerNote"),
     modelSelect: document.getElementById("modelSelect"),
@@ -69,18 +70,31 @@
     user: null,
     models: [],
     defaultModel: "",
+    fastModeAvailable: false,
     messages: [],
     isGenerating: false,
     activeController: null,
     stopRequested: false,
     timeoutFired: false,
     passwordBusy: false,
+    fast: false,
     reasoning: false,
   };
 
   function setComposerHint(text) {
     elements.composerNote.textContent = text;
     elements.composerNote.hidden = !text;
+  }
+
+  function updateModeHint() {
+    const notes = [];
+    if (state.fast) {
+      notes.push("Fast mode on: live tools are off and output stays on the faster GPU sampling path.");
+    }
+    if (state.reasoning) {
+      notes.push("Extended thinking on: the model reasons first, so the answer starts later.");
+    }
+    setComposerHint(notes.join(" "));
   }
 
   function createElement(tagName, className, text) {
@@ -315,6 +329,14 @@
         .map(normalizeModel)
         .filter((model) => model && !uniqueIds.has(model.id) && uniqueIds.add(model.id));
       state.defaultModel = boundedText(data.default_model, 300).trim();
+      state.fastModeAvailable = data.fast_mode_available === true;
+      elements.fastToggle.hidden = !state.fastModeAvailable;
+      if (!state.fastModeAvailable) {
+        state.fast = false;
+        elements.fastToggle.setAttribute("aria-checked", "false");
+        elements.fastToggle.classList.remove("is-on");
+        updateModeHint();
+      }
       elements.modelSelect.replaceChildren();
 
       if (state.models.length === 0) {
@@ -578,7 +600,7 @@
     view.body.append(block);
   }
 
-  function buildBoundedRequest(allMessages, modelId, reasoning) {
+  function buildBoundedRequest(allMessages, modelId, reasoning, fast) {
     const selected = [];
     let charCount = 0;
     let wasTrimmed = false;
@@ -608,11 +630,11 @@
       wasTrimmed = true;
     }
 
-    let serialized = JSON.stringify({ model: modelId, messages: selected, reasoning: !!reasoning });
+    let serialized = JSON.stringify({ model: modelId, messages: selected, reasoning: !!reasoning, fast: !!fast });
     while (new TextEncoder().encode(serialized).byteLength > MAX_REQUEST_BYTES && selected.length > 1) {
       selected.shift();
       wasTrimmed = true;
-      serialized = JSON.stringify({ model: modelId, messages: selected, reasoning: !!reasoning });
+      serialized = JSON.stringify({ model: modelId, messages: selected, reasoning: !!reasoning, fast: !!fast });
     }
     if (new TextEncoder().encode(serialized).byteLength > MAX_REQUEST_BYTES) {
       throw new Error("The message is too large to send safely.");
@@ -836,7 +858,7 @@
     state.messages.push({ role: "user", content });
     let boundedRequest;
     try {
-      boundedRequest = buildBoundedRequest(state.messages, model.id, state.reasoning);
+      boundedRequest = buildBoundedRequest(state.messages, model.id, state.reasoning, state.fast);
     } catch (error) {
       state.messages.pop();
       showNotice(error instanceof Error ? error.message : "The message is too large to send safely.");
@@ -1134,16 +1156,18 @@
       void sendMessage();
     });
     elements.stopButton.addEventListener("click", stopGeneration);
+    elements.fastToggle.addEventListener("click", () => {
+      state.fast = !state.fast;
+      elements.fastToggle.setAttribute("aria-checked", state.fast ? "true" : "false");
+      elements.fastToggle.classList.toggle("is-on", state.fast);
+      updateModeHint();
+    });
     elements.reasoningToggle.addEventListener("click", () => {
       state.reasoning = !state.reasoning;
       elements.reasoningToggle.setAttribute("aria-checked", state.reasoning ? "true" : "false");
       elements.reasoningToggle.classList.toggle("is-on", state.reasoning);
       // The cost is real, so say so rather than letting it feel like a hang.
-      setComposerHint(
-        state.reasoning
-          ? "Extended thinking on: the model reasons first, so the answer starts later."
-          : "",
-      );
+      updateModeHint();
     });
     elements.newChatButton.addEventListener("click", newConversation);
     elements.sidebarToggle.addEventListener("click", openSidebar);

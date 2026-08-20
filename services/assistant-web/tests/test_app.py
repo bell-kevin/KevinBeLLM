@@ -17,7 +17,7 @@ def _settings(tmp_path) -> Settings:
         public_origin="http://testserver",
         secure_cookie=False,
         source_url="https://example.org/source",
-        ollama_url="http://127.0.0.1:11434",
+        inference_base_url="http://127.0.0.1:8080",
         searxng_url="http://127.0.0.1:8888",
         live_tools_url="http://127.0.0.1:8090",
         default_model="recommended:latest",
@@ -31,11 +31,12 @@ def _settings(tmp_path) -> Settings:
         chat_deadline_seconds=60,
         fetch_deadline_seconds=5,
         database_concurrency=2,
-        ollama_context_length=4_096,
     )
 
 
 def test_login_session_csrf_models_and_chat(tmp_path, monkeypatch) -> None:
+    tools_enabled_values: list[bool] = []
+
     async def fake_models(_client, _settings):
         return {
             "models": [
@@ -51,8 +52,11 @@ def test_login_session_csrf_models_and_chat(tmp_path, monkeypatch) -> None:
             "default_model": "recommended:latest",
         }
 
-    async def fake_chat(_client, _settings, model, messages, emit, reasoning=False):
+    async def fake_chat(
+        _client, _settings, model, messages, emit, reasoning=False, tools_enabled=True
+    ):
         assert messages[-1] == {"role": "user", "content": "hello"}
+        tools_enabled_values.append(tools_enabled)
         await emit("status", {"message": "Testing"})
         # run_chat now streams visible text as the model produces it; main.py no
         # longer re-chunks a finished answer.
@@ -113,7 +117,9 @@ def test_login_session_csrf_models_and_chat(tmp_path, monkeypatch) -> None:
         session = client.get("/api/auth/session").json()
         assert session["authenticated"] is True
         assert session["csrf_token"] == csrf
-        assert client.get("/api/models").json()["default_model"] == "recommended:latest"
+        models = client.get("/api/models").json()
+        assert models["default_model"] == "recommended:latest"
+        assert models["fast_mode_available"] is True
 
         admission = application.state.chat_admission
         application.state.chat_admission = asyncio.Semaphore(0)
@@ -153,6 +159,7 @@ def test_login_session_csrf_models_and_chat(tmp_path, monkeypatch) -> None:
             json={
                 "model": "recommended:latest",
                 "messages": [{"role": "user", "content": "hello"}],
+                "fast": True,
             },
         ) as response:
             stream = "".join(response.iter_text())
@@ -164,6 +171,20 @@ def test_login_session_csrf_models_and_chat(tmp_path, monkeypatch) -> None:
         # "done" carries the authoritative answer so the client can reconcile
         # its live preview against post-processed text.
         assert '"content":"Local answer"' in stream
+        assert tools_enabled_values == [False]
+
+        with client.stream(
+            "POST",
+            "/api/chat",
+            headers={"X-CSRF-Token": csrf},
+            json={
+                "model": "recommended:latest",
+                "messages": [{"role": "user", "content": "hello"}],
+            },
+        ) as response:
+            "".join(response.iter_text())
+        assert response.status_code == 200
+        assert tools_enabled_values == [False, True]
 
         assert client.post("/api/auth/logout").status_code == 403
         assert client.post(

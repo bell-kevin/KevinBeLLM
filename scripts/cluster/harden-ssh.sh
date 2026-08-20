@@ -18,7 +18,7 @@ Usage: sudo harden-ssh.sh --admin-user USER --lan-cidr CIDR [options]
 
 Options:
   --ssh-port PORT  SSH port to protect (default: 22)
-  --enable-ufw     Enable UFW, allow SSH from CIDR, and deny TCP/50052
+  --enable-ufw     Enable UFW and allow SSH only from CIDR
 
 The script refuses to disable password login until USER has at least one valid
 public key in ~/.ssh/authorized_keys. Keep the current SSH session open while
@@ -140,9 +140,6 @@ if ((enable_ufw)); then
   cluster_require_command ufw
   cluster_info "Adding the LAN-scoped SSH firewall policy"
   ufw allow from "${lan_cidr}" to any port "${ssh_port}" proto tcp comment 'KevinBeLLM SSH from home LAN'
-  if ! ufw status numbered | grep -Eq '50052/tcp[[:space:]]+DENY IN'; then
-    ufw insert 1 deny in to any port 50052 proto tcp comment 'Never expose llama RPC'
-  fi
   ufw --force enable
 
   # Never delete administrator-owned firewall rules automatically. Surface the

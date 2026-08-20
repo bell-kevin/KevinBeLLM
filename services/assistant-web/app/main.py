@@ -151,6 +151,9 @@ class ChatBody(BaseModel):
     # Opt-in per request. Thinking measurably raises answer quality but costs
     # hundreds to thousands of extra tokens before any visible text appears.
     reasoning: bool = False
+    # Fast mode is local-model-only: omitting live tools removes llama.cpp's
+    # tool grammar and lets it keep sampling on the GPUs.
+    fast: bool = False
 
     @model_validator(mode="after")
     def validate_history(self) -> "ChatBody":
@@ -429,7 +432,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         _user: Annotated[User, Depends(require_user)],
     ) -> dict[str, Any]:
         try:
-            return await installed_models(request.app.state.http, configured)
+            catalog = await installed_models(request.app.state.http, configured)
+            return {
+                **catalog,
+                "fast_mode_available": True,
+            }
         except AssistantError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -512,6 +519,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             [message.model_dump() for message in body.messages],
                             emit,
                             body.reasoning,
+                            tools_enabled=not body.fast,
                         )
                 finally:
                     request.app.state.chat_slots.release()

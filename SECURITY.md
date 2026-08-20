@@ -23,14 +23,11 @@ Every application and inference port binds to loopback:
 | 8090 | read-only live tools | `127.0.0.1` only |
 | 8888 | SearXNG | `127.0.0.1` only |
 
-The Windows laptop reaches port 3000 through an SSH local forward. There is
-one host, and it has no listener on 50052 or 50053; `cluster-status.sh` proves
-that on every run rather than assuming it. Never port-forward ports 3000, 8080,
-8090, 8888, 50052, 50053, or 11434 on the home router. SSH
-itself should use
-keys only and be limited by the host firewall to the trusted home subnet; use a
-VPN rather than an Internet-facing router rule if remote administration is
-later needed.
+The Windows laptop reaches port 3000 through an SSH local forward. Never
+port-forward ports 3000, 8080, 8090, or 8888 on the home router. SSH itself
+should use keys only and be limited by the host firewall to the trusted home
+subnet; use a VPN rather than an Internet-facing router rule if remote
+administration is later needed.
 
 
 The optional browser-facing Cloudflare path must use a named Tunnel protected
@@ -38,37 +35,19 @@ by Cloudflare Access and then the application's own login. Do not point GitHub
 Pages JavaScript directly at a private service port, and do not use a public
 unauthenticated quick tunnel.
 
-## llama.cpp RPC warning
+## llama.cpp service boundary
 
-The default standalone service neither launches `ggml-rpc-server` nor supplies
-an RPC address to `llama-server`. Because this pinned revision auto-loads
-llama.cpp configuration files, the systemd sandbox also hides both system and
-user config locations, removes redirectable home/config values, and launches
-the server with a cleared environment containing only its CUDA device selector.
-It also fixes llama.cpp's offline and no-agent modes; ordinary request-level
-OpenAI-compatible tool-call responses remain available to the application.
-Its installer first disables the prior inference server and locally installed
-RPC tunnel/worker units, then refuses migration if either RPC port remains
-open. Its status check enforces the same port boundary. Compiling optional
-RPC support into the pinned tool build does not create a reachable parser; an
-RPC process or client address must still be deliberately started.
+The pinned build sets `GGML_RPC=OFF` and produces only `llama-server`,
+`llama-cli`, and `llama-bench`. The systemd unit fixes the server endpoint to
+IPv4 loopback, runs in offline/no-agent mode, and exposes neither the embedded
+web UI nor model-download routes. Ordinary OpenAI-compatible tool-call
+responses remain available to the application.
 
-Upstream describes the RPC backend as proof-of-concept, fragile, and insecure.
-As of the pinned `b10451` deployment, upstream also lists
-`CVE-2026-34159`/`GHSA-j8rj-fmpv-wcxw`, a critical unauthenticated RPC
-remote-code-execution issue, with no patched version identified in the
-advisory. The SSH tunnel limits who can reach the parser; it does not repair the
-RPC implementation.
-
-This deployment therefore does not build, install, or run that backend at all.
-The installer disables any RPC unit left over from an earlier two-host setup
-before it does anything else, and refuses to proceed while TCP/50052 or
-TCP/50053 still has a listener. `cluster-status.sh` re-checks both on every
-run. Do not weaken those controls. Recheck the
-[llama.cpp security advisories](https://github.com/ggml-org/llama.cpp/security)
-before upgrading or deploying. If one request must use both GPUs, moving them
-into one suitable chassis is the preferred way to eliminate the network RPC
-boundary.
+Because this llama.cpp revision auto-loads configuration files, the systemd
+sandbox hides its system and user configuration locations, removes redirectable
+home/config values, and launches the server with a cleared environment. Recheck
+the [llama.cpp security advisories](https://github.com/ggml-org/llama.cpp/security)
+before upgrading the pinned revision.
 
 ## Host and application boundary
 

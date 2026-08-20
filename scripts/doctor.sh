@@ -10,7 +10,6 @@ search_port="$(sed -n 's/^SEARXNG_HOST_PORT=//p' "${project_dir}/infra/search/.e
 app_port="${app_port:-3000}"
 tools_port="${tools_port:-8090}"
 search_port="${search_port:-8888}"
-inference_backend="$("${project_dir}/scripts/inference.sh" backend)"
 inference_url="$("${project_dir}/scripts/inference.sh" url)"
 
 check_url() {
@@ -24,12 +23,8 @@ check_url() {
   fi
 }
 
-if [[ "${inference_backend}" == "llamacpp" ]]; then
-  check_url "llama.cpp health" "${inference_url}/health"
-  check_url "llama.cpp models" "${inference_url}/v1/models"
-else
-  check_url "Ollama API" "${inference_url}/api/version"
-fi
+check_url "llama.cpp health" "${inference_url}/health"
+check_url "llama.cpp models" "${inference_url}/v1/models"
 check_url "Structured tools" "http://127.0.0.1:${tools_port}/health"
 check_url "OpenAPI schema" "http://127.0.0.1:${tools_port}/openapi.json"
 check_url "SearXNG JSON" "http://127.0.0.1:${search_port}/search?q=OpenAI&format=json"

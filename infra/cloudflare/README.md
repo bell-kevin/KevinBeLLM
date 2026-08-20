@@ -2,8 +2,8 @@
 
 This deployment publishes the loopback-only KevinBeLLM web service on Machine A
 through a **remotely managed, named Cloudflare Tunnel**. Cloudflare Access is the
-outer identity gate and KevinBeLLM keeps its own login as a second gate. Machine
-B has no public route, and neither machine needs a router port-forward.
+outer identity gate and KevinBeLLM keeps its own login as a second gate. The
+connector is outbound-only, so no router port-forward is required.
 
 The `cloudflared` client is Apache-2.0 FLOSS. Cloudflare Access and its edge
 network are hosted proprietary services. A self-managed VPN or public reverse
@@ -27,7 +27,7 @@ named Tunnel connector on Machine A (outbound connection only)
 KevinBeLLM application login
         |
         v
-standalone llama.cpp on Machine A -> RTX 3060 everyday model
+standalone llama.cpp on Machine A -> RTX 3060 + RTX 3070 everyday model
 ```
 
 GitHub Pages is only a public landing page. It is not an authentication layer,
@@ -39,8 +39,7 @@ The connector deliberately uses host networking so that a rootless container
 can reach Machine A's loopback-bound origin. The Compose service publishes no
 ports, binds its metrics endpoint to loopback, runs as Machine A's unprivileged
 UID/GID, drops every Linux capability, and uses a read-only root filesystem.
-There is one host in this path. This deployment does
-not change the browser-facing origin or give B a public route.
+This deployment does not change the browser-facing origin.
 
 ## Prerequisites
 
@@ -59,13 +58,9 @@ port-forward. `cloudflared` makes outbound connections to Cloudflare, normally
 on port 7844 over UDP (QUIC) or TCP (HTTP/2); it needs no inbound firewall rule.
 See Cloudflare's [tunnel firewall guidance][firewall].
 
-## Reuse the existing Cloudflare deployment
+## Review the named Cloudflare deployment
 
-Reusing the existing hostname, Access application, DNS record, and named tunnel
-is preferable to creating parallel public infrastructure. A new public GitHub
-repository or a new tunnel is not required for this hardware migration.
-
-Before changing the connector, audit these dashboard settings without copying
+Before starting the connector, audit these dashboard settings without copying
 any credential into the repository:
 
 1. In **Zero Trust -> Access controls -> Applications**, open the existing
@@ -79,49 +74,13 @@ any credential into the repository:
 3. In **Networking -> Tunnels**, open the existing named tunnel and its
    published application route. Set the service to
    `http://127.0.0.1:3000` and enable **Protect with Access**.
-4. Keep the existing connector running only until Machine A has been prepared.
-   Two active replicas of one tunnel can both receive requests, so do not use
-   the public hostname as proof that a request reached Machine A while the old
-   connector is still online.
-
-If those resources are missing or cannot be recovered, follow the new-resource
-procedure below. Otherwise skip it and migrate the connector.
-
-### Migrate the connector to Machine A
-
-1. Confirm locally on Machine A that KevinBeLLM shows its application login:
+4. Confirm locally on Machine A that KevinBeLLM shows its application login:
 
    ```bash
    curl --fail --head http://127.0.0.1:3000/
    ```
 
-2. Prepare the non-secret settings and token file as described below. Obtain
-   the existing tunnel's current token from **Add a replica** in the dashboard.
-   Paste it directly into Machine A's ignored token file; do not copy an old
-   `.env`, browser profile, or credentials directory from the retired host.
-3. Start the rootless connector on Machine A and wait for it to become healthy.
-   Confirm that a new connector ID appears as healthy on the tunnel overview.
-4. Stop and disable the connector on the old host. Then test the public hostname
-   again; with the old replica offline, this proves Machine A serves the request.
-5. Follow Cloudflare's [tunnel-token rotation procedure][tunnel-token], replace
-   Machine A's token file, and restart the connector. Because the old connector
-   was stopped first, it cannot establish a new connection with the rotated
-   token. Remove its old token file only after verifying the exact path and that
-   Machine A reconnects with the rotated token.
-
-If the old connector used this repository's proof-of-concept Compose project,
-stop that exact legacy project on its original host with:
-
-```bash
-./scripts/compose.sh \
-  -f infra/cloudflare/compose.yaml \
-  --env-file infra/cloudflare/.env \
-  -p asus-kevin-remote-access \
-  down
-```
-
-Run this only on the verified old checkout; the new Machine A project is named
-`kevinbellm-remote-access`.
+If these resources are missing, follow the new-resource procedure below.
 
 The dashboard work and secret entry require the account owner. This repository
 cannot safely automate them without introducing long-lived Cloudflare account
@@ -261,8 +220,7 @@ as a phone with Wi-Fi disabled:
 4. Start a short streamed answer and confirm the response completes.
 5. Sign out of both layers and confirm a new private session is challenged.
 6. From another LAN device, verify Machine A's port 3000 is not reachable by its
-   LAN address. Also verify there is no router port-forward for 3000, 8080, or
-   the llama.cpp RPC ports.
+   LAN address. Also verify there is no router port-forward for 3000 or 8080.
 7. Confirm every public **Open assistant** link uses only the hostname that
    passed these checks.
 
@@ -280,13 +238,12 @@ and disable or remove the published route before correcting Access:
 ## Operations
 
 - Keep KevinBeLLM's login enabled as defense in depth.
-- Rotate the named tunnel token after migration and immediately after suspected
-  exposure.
+- Rotate the named tunnel token immediately after suspected exposure.
 - Upgrade the pinned image deliberately after reviewing Cloudflare release
   notes and replacing both the tag and Linux/AMD64 digest.
 - Check connector health in the tunnel overview and locally with Compose `ps`.
-- Do not run a second connector anywhere and do not make Machine A's origin listen
-  on `0.0.0.0` merely to satisfy the tunnel.
+- Run only one connector for this route, and do not make Machine A's origin
+  listen on `0.0.0.0` merely to satisfy the tunnel.
 - Stopping the connector removes remote access without stopping local inference.
 
 [create-tunnel]: https://developers.cloudflare.com/tunnel/setup/

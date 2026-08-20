@@ -58,29 +58,6 @@ data_volume="${data_volume:-kevinbellm-data}"
   echo "KEVINBELLM_DATA_VOLUME contains unsupported characters." >&2
   exit 1
 }
-legacy_volume='asus-kevin-bellm-data'
-if [[ "${data_volume}" != "${legacy_volume}" ]] && \
-   "${engine}" volume inspect "${legacy_volume}" >/dev/null 2>&1; then
-  if ! "${engine}" volume inspect "${data_volume}" >/dev/null 2>&1; then
-    cat >&2 <<EOF
-Found the proof-of-concept data volume ${legacy_volume}, but the configured
-volume is ${data_volume}. Refusing to create a new empty login database during
-an in-place upgrade. To retain the existing account, set this in .env:
-
-  KEVINBELLM_DATA_VOLUME=${legacy_volume}
-
-Fresh Machine A deployments without that legacy volume use kevinbellm-data.
-EOF
-    exit 1
-  fi
-  cat >&2 <<EOF
-Both ${legacy_volume} and ${data_volume} exist. Refusing to guess which account
-database is authoritative. Set KEVINBELLM_DATA_VOLUME=${legacy_volume} to keep
-using the proof-of-concept database, or explicitly archive/remove the legacy
-volume only after verifying a completed migration.
-EOF
-  exit 1
-fi
 
 "${project_dir}/scripts/compose.sh" \
   -f "${project_dir}/compose.yaml" \

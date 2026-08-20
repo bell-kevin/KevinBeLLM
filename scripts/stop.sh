@@ -27,10 +27,5 @@ fi
   down --remove-orphans
 
 echo "Stopped the browser, tool, tunnel, and search services."
-backend="$("${project_dir}/scripts/inference.sh" backend)"
-if [[ "${backend}" == "llamacpp" ]]; then
-  echo "llama.cpp remains available locally; stop it with:"
-  echo "  systemctl --user stop kevinbellm-llama.service"
-else
-  echo "Ollama remains available locally; stop it with: systemctl --user stop ollama.service"
-fi
+echo "llama.cpp remains available locally; stop it with:"
+echo "  systemctl --user stop kevinbellm-llama.service"

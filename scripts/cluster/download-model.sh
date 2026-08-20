@@ -17,7 +17,6 @@ Usage: download-model.sh [--preset NAME] [--output PATH] [--verify-only]
 
 Presets:
   27b-iq4_xs    Qwen3.8-27B UD-IQ4_XS (default; layer-split over both GPUs)
-  9b-q6_k       Qwen3.5-9B Q6_K (smaller, much faster, RTX 3060 alone)
 
 Downloads the selected artifact at an immutable revision, then verifies both
 byte count and SHA-256. A .part file is kept for safe resume after an
@@ -52,13 +51,6 @@ while (($#)); do
 done
 
 case "${preset}" in
-  9b-q6_k)
-    model_repo='bartowski/Qwen_Qwen3.5-9B-GGUF'
-    model_revision='182be2fd6c7bc44887d88a91cb03ff009cc9f549'
-    model_filename='Qwen_Qwen3.5-9B-Q6_K.gguf'
-    model_bytes='7958818848'
-    model_sha256='073a9275e65d9c8cd2819cf5f77b99fbaa6e87ba591da6bbaa86ec073a64bfef'
-    ;;
   27b-iq4_xs)
     model_repo='unsloth/Qwen3.8-27B-GGUF'
     model_revision='4ca720788d1e01f1bff70c033e0d0028fd02e502'

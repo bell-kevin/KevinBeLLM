@@ -299,7 +299,7 @@ async def search_huggingface_models(
     ),
     require_gguf: bool = Query(
         False,
-        description="If true, only return repositories tagged GGUF (common for local llama.cpp/Ollama use).",
+        description="If true, only return repositories tagged GGUF (common for local llama.cpp use).",
     ),
     limit: int = Query(8, ge=1, le=15, description="Number of model repositories to return."),
 ) -> ModelSearchResponse:

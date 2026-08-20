@@ -17,7 +17,8 @@ from .config import Settings
 from .tools import ToolError, ToolRunner, tool_definitions
 
 
-MAX_OLLAMA_RESPONSE_BYTES = 4 * 1024 * 1024
+MAX_INFERENCE_RESPONSE_BYTES = 4 * 1024 * 1024
+
 
 def _bounded_env_int(name: str, default: int, minimum: int, maximum: int) -> int:
     """Read a bounded integer knob, falling back to the measured default."""
@@ -46,7 +47,7 @@ MAX_ASSISTANT_CHARS = 50_000
 # Once the bounded loop withdraws the tools, a tool-eager model still tries to call
 # one. llama.cpp only parses tool calls when the request carries a tool schema, so
 # with the schema gone the attempt returns as literal text and lands in the answer.
-# Qwen3.8-27B hits this on nearly every multi-tool question where Qwen3.5-9B did not.
+# The deployed model hits this on nearly every multi-tool question.
 # A trailing *user* turn stops it. A trailing system turn is not an option: Qwen's
 # chat template rejects a late system message and llama.cpp answers HTTP 500. Sending
 # tool_choice="none" with the schema does not suppress the attempt either.
@@ -101,20 +102,7 @@ class AssistantError(Exception):
     """A safe assistant/upstream failure that may be shown to the signed-in user."""
 
 
-def _inference_backend(settings: Settings) -> str:
-    backend = getattr(settings, "inference_backend", "ollama")
-    if backend not in {"ollama", "llamacpp"}:
-        raise AssistantError("The local model backend is misconfigured")
-    return backend
-
-
-def _inference_base_url(settings: Settings) -> str:
-    # inference_base_url is optional on Settings so older keyword constructors
-    # continue to point at their existing ollama_url value.
-    return getattr(settings, "inference_base_url", None) or settings.ollama_url
-
-
-async def _ollama_json(
+async def _inference_json(
     client: httpx.AsyncClient,
     method: str,
     url: str,
@@ -137,7 +125,7 @@ async def _ollama_json(
                 content = bytearray()
                 async for chunk in response.aiter_bytes():
                     content.extend(chunk)
-                    if len(content) > MAX_OLLAMA_RESPONSE_BYTES:
+                    if len(content) > MAX_INFERENCE_RESPONSE_BYTES:
                         raise AssistantError("The local model response was too large")
     except AssistantError:
         raise
@@ -217,7 +205,7 @@ async def _stream_chat_completion(
                     # width; counting characters would let a multibyte stream
                     # run well past the byte budget.
                     received += len(line.encode("utf-8")) + 1
-                    if received > MAX_OLLAMA_RESPONSE_BYTES:
+                    if received > MAX_INFERENCE_RESPONSE_BYTES:
                         raise AssistantError("The local model response was too large")
                     if not line.startswith("data:"):
                         continue
@@ -268,34 +256,24 @@ async def _stream_chat_completion(
 async def installed_models(
     client: httpx.AsyncClient, settings: Settings
 ) -> dict[str, Any]:
-    backend = _inference_backend(settings)
-    base_url = _inference_base_url(settings)
-    payload = await _ollama_json(
+    payload = await _inference_json(
         client,
         "GET",
-        f"{base_url}/api/tags" if backend == "ollama" else f"{base_url}/v1/models",
+        f"{settings.inference_base_url}/v1/models",
         timeout=15.0,
     )
-    list_key = "models" if backend == "ollama" else "data"
-    if not isinstance(payload, dict) or not isinstance(payload.get(list_key), list):
+    if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
         raise AssistantError("The local model service returned an invalid model list")
 
     models_by_id: dict[str, dict[str, Any]] = {}
-    for raw in payload[list_key][:200]:
+    for raw in payload["data"][:200]:
         if not isinstance(raw, dict):
             continue
-        model_id = (
-            raw.get("name") or raw.get("model")
-            if backend == "ollama"
-            else raw.get("id")
-        )
+        model_id = raw.get("id")
         if not isinstance(model_id, str) or not 1 <= len(model_id) <= 200:
             continue
-        details_key = "details" if backend == "ollama" else "meta"
-        details = (
-            raw.get(details_key) if isinstance(raw.get(details_key), dict) else {}
-        )
-        size = raw.get("size") if backend == "ollama" else details.get("size")
+        details = raw.get("meta") if isinstance(raw.get("meta"), dict) else {}
+        size = details.get("size")
         parameter_size = details.get("parameter_size")
         if not isinstance(parameter_size, str):
             parameter_size = _format_parameter_count(details.get("n_params"))
@@ -389,7 +367,7 @@ def _tool_call(raw: Any) -> tuple[str, dict[str, Any], str | None] | None:
 
 
 def _openai_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert the internal/Ollama history to an OpenAI-compatible history."""
+    """Convert the internal history to an OpenAI-compatible history."""
     converted: list[dict[str, Any]] = []
     pending_tool_ids: list[str] = []
     for message_index, message in enumerate(messages):
@@ -405,8 +383,8 @@ def _openai_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 if parsed is None:
                     continue
                 name, arguments, call_id = parsed
-                # Some Ollama models and older llama.cpp templates omit IDs. A
-                # stable local ID keeps the OpenAI assistant/tool pair valid.
+                # Older llama.cpp templates can omit IDs. A stable local ID
+                # keeps the OpenAI assistant/tool pair valid.
                 call_id = call_id or f"call_{message_index}_{call_index}"
                 pending_tool_ids.append(call_id)
                 tool_calls.append(
@@ -479,46 +457,27 @@ async def _chat_once(
     on_reasoning: OnDelta | None = None,
     reasoning: bool = False,
 ) -> dict[str, Any]:
-    backend = _inference_backend(settings)
-    base_url = _inference_base_url(settings)
-    # Only the llama.cpp path streams. The legacy Ollama adapter keeps its
-    # buffered contract so this change cannot alter that backend's behaviour.
-    streaming = on_delta is not None and backend == "llamacpp"
-    if backend == "ollama":
-        body: dict[str, Any] = {
-            "model": model,
-            "messages": messages,
-            "stream": False,
-            # Qwen's thinking mode is enabled by default. On this hardware it can
-            # consume the whole prediction budget without producing visible text,
-            # so it stays opt-in per request.
-            "think": reasoning,
-            "options": {
-                "num_ctx": settings.ollama_context_length,
-                "num_predict": (
-                    REASONING_MAX_TOKENS if reasoning else ANSWER_MAX_TOKENS
-                ),
-                "temperature": 0.3,
-            },
-        }
-        endpoint = f"{base_url}/api/chat"
-    else:
-        body = {
-            "model": model,
-            "messages": _openai_messages(messages),
-            "stream": streaming,
-            "max_tokens": REASONING_MAX_TOKENS if reasoning else ANSWER_MAX_TOKENS,
-            "temperature": 0.3,
-            "parse_tool_calls": True,
-        }
-        if not reasoning:
-            body["reasoning_effort"] = "none"
-            body["chat_template_kwargs"] = {"enable_thinking": False}
-        endpoint = f"{base_url}/v1/chat/completions"
+    streaming = on_delta is not None
+    body: dict[str, Any] = {
+        "model": model,
+        "messages": _openai_messages(messages),
+        "stream": streaming,
+        "max_tokens": REASONING_MAX_TOKENS if reasoning else ANSWER_MAX_TOKENS,
+        "temperature": 0.3,
+        "parse_tool_calls": True,
+    }
+    if not include_tools:
+        # Tool schemas create a lazy grammar. llama.cpp cannot combine any
+        # grammar with target-backend sampling, but its CUDA sampler is
+        # substantially faster on this host when no live tools are needed.
+        body["backend_sampling"] = True
+    if not reasoning:
+        body["reasoning_effort"] = "none"
+        body["chat_template_kwargs"] = {"enable_thinking": False}
+    endpoint = f"{settings.inference_base_url}/v1/chat/completions"
     if include_tools:
         body["tools"] = tool_definitions(settings)
-        if backend == "llamacpp":
-            body["tool_choice"] = "auto"
+        body["tool_choice"] = "auto"
     if streaming and on_delta is not None:
         return await _stream_chat_completion(
             client,
@@ -528,21 +487,16 @@ async def _chat_once(
             on_delta=on_delta,
             on_reasoning=on_reasoning,
         )
-    payload = await _ollama_json(
+    payload = await _inference_json(
         client,
         "POST",
         endpoint,
         body=body,
         timeout=600.0,
     )
-    if backend == "ollama":
-        message = payload.get("message") if isinstance(payload, dict) else None
-    else:
-        choices = payload.get("choices") if isinstance(payload, dict) else None
-        first_choice = choices[0] if isinstance(choices, list) and choices else None
-        message = (
-            first_choice.get("message") if isinstance(first_choice, dict) else None
-        )
+    choices = payload.get("choices") if isinstance(payload, dict) else None
+    first_choice = choices[0] if isinstance(choices, list) and choices else None
+    message = first_choice.get("message") if isinstance(first_choice, dict) else None
     if not isinstance(message, dict):
         raise AssistantError("The local model returned an invalid chat response")
     return message
@@ -555,6 +509,7 @@ async def run_chat(
     user_messages: list[dict[str, str]],
     emit: EmitEvent,
     reasoning: bool = False,
+    tools_enabled: bool = True,
 ) -> tuple[str, list[dict[str, str]]]:
     conversation: list[dict[str, Any]] = [
         {"role": "system", "content": _system_prompt(settings)},
@@ -606,14 +561,15 @@ async def run_chat(
             streamed_chars = 0
             streamed_any = False
 
-    for _round in range(MAX_TOOL_ROUNDS):
+    rounds = MAX_TOOL_ROUNDS if tools_enabled else 1
+    for _round in range(rounds):
         await begin_round()
         message = await _chat_once(
             client,
             settings,
             model,
             conversation,
-            include_tools=True,
+            include_tools=tools_enabled,
             on_delta=on_delta,
             on_reasoning=reasoning_sink,
             reasoning=reasoning,
@@ -621,7 +577,7 @@ async def run_chat(
         raw_content = message.get("content")
         content = raw_content if isinstance(raw_content, str) else ""
         raw_calls = message.get("tool_calls")
-        if not isinstance(raw_calls, list) or not raw_calls:
+        if not tools_enabled or not isinstance(raw_calls, list) or not raw_calls:
             final_content = content
             break
 

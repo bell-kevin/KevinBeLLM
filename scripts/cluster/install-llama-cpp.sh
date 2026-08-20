@@ -18,7 +18,7 @@ usage() {
 Usage: install-llama-cpp.sh [--install-dir PATH] [--jobs N]
 
 Builds the immutable llama.cpp ${llama_ref} commit for Ampere compute capability
-8.6. Everyday standalone service needs it only on Machine A. Run the same
+8.6 on Machine A. The build includes CUDA inference and disables network RPC.
 EOF
 }
 
@@ -61,6 +61,14 @@ build_dir="${install_dir}/build"
 spec_file="${install_dir}/KEVINBELLM_BUILD_SPEC.txt"
 new_clone=0
 
+[[ ! -L "${build_dir}" ]] || cluster_die "Refusing build-directory symlink: ${build_dir}"
+if [[ -f "${build_dir}/CMakeCache.txt" ]] && \
+   grep -qxF 'GGML_RPC:BOOL=ON' "${build_dir}/CMakeCache.txt"; then
+  cluster_die "Refusing to reuse an RPC-enabled build directory: ${build_dir}. Build into a fresh install directory."
+fi
+[[ ! -e "${build_dir}/bin/ggml-rpc-server" ]] || \
+  cluster_die "Refusing to reuse a build containing ggml-rpc-server: ${build_dir}. Build into a fresh install directory."
+
 if [[ -e "${install_dir}" && ! -d "${install_dir}" ]]; then
   cluster_die "Install path exists and is not a directory: ${install_dir}"
 fi
@@ -95,7 +103,7 @@ cmake_args=(
   -DCMAKE_CUDA_ARCHITECTURES=86
   -DGGML_CUDA=ON
   -DGGML_NATIVE=OFF
-  -DGGML_RPC=ON
+  -DGGML_RPC=OFF
   -DGGML_AVX=OFF
   -DGGML_AVX2=OFF
   -DGGML_BMI2=OFF
@@ -109,14 +117,16 @@ cmake_args=(
   -DLLAMA_OPENSSL=OFF
 )
 
-cluster_info "Configuring the pinned Ampere CUDA build (optional RPC capability retained)"
+cluster_info "Configuring the pinned Ampere CUDA build"
 cmake "${cmake_args[@]}"
-cluster_info "Building llama-server, ggml-rpc-server, llama-cli, and llama-bench"
-cmake --build "${build_dir}" --parallel "${jobs}" --target llama-server ggml-rpc-server llama-cli llama-bench
+cluster_info "Building llama-server, llama-cli, and llama-bench"
+cmake --build "${build_dir}" --parallel "${jobs}" --target llama-server llama-cli llama-bench
 
-for binary in llama-server ggml-rpc-server llama-cli llama-bench; do
+for binary in llama-server llama-cli llama-bench; do
   [[ -x "${build_dir}/bin/${binary}" ]] || cluster_die "Build did not produce ${binary}."
 done
+[[ ! -e "${build_dir}/bin/ggml-rpc-server" ]] || \
+  cluster_die "The RPC-disabled build unexpectedly produced ggml-rpc-server."
 
 {
   printf 'repository=%s\n' "${llama_repo}"
@@ -126,7 +136,7 @@ done
   printf '%s\n' 'CMAKE_CUDA_ARCHITECTURES=86'
   printf '%s\n' 'GGML_CUDA=ON'
   printf '%s\n' 'GGML_NATIVE=OFF'
-  printf '%s\n' 'GGML_RPC=ON'
+  printf '%s\n' 'GGML_RPC=OFF'
   printf '%s\n' 'GGML_AVX=OFF'
   printf '%s\n' 'GGML_AVX2=OFF'
   printf '%s\n' 'GGML_BMI2=OFF'
@@ -140,7 +150,6 @@ done
   printf '%s\n' 'LLAMA_OPENSSL=OFF'
   sha256sum \
     "${build_dir}/bin/llama-server" \
-    "${build_dir}/bin/ggml-rpc-server" \
     "${build_dir}/bin/llama-cli" \
     "${build_dir}/bin/llama-bench"
 } >"${spec_file}"

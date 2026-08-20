@@ -20,19 +20,14 @@ from app.config import Settings
 from app.tools import ToolExecution
 
 
-def _settings(tmp_path, *, backend: str = "ollama") -> Settings:
-    base_url = (
-        "http://127.0.0.1:11434"
-        if backend == "ollama"
-        else "http://127.0.0.1:8080"
-    )
+def _settings(tmp_path) -> Settings:
     return Settings(
         data_dir=tmp_path,
         public_url="http://localhost:3000",
         public_origin="http://localhost:3000",
         secure_cookie=False,
         source_url="https://example.org/source",
-        ollama_url=base_url,
+        inference_base_url="http://127.0.0.1:8080",
         searxng_url="http://127.0.0.1:8888",
         live_tools_url="http://127.0.0.1:8090",
         default_model="test-model",
@@ -46,9 +41,6 @@ def _settings(tmp_path, *, backend: str = "ollama") -> Settings:
         chat_deadline_seconds=60,
         fetch_deadline_seconds=5,
         database_concurrency=2,
-        ollama_context_length=4_096,
-        inference_backend=backend,
-        inference_base_url=base_url,
     )
 
 
@@ -100,7 +92,7 @@ def test_model_cannot_amplify_tool_calls(monkeypatch, tmp_path) -> None:
 
 
 def test_llamacpp_model_discovery_is_normalized(tmp_path) -> None:
-    settings = _settings(tmp_path, backend="llamacpp")
+    settings = _settings(tmp_path)
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "GET"
@@ -146,23 +138,23 @@ def test_llamacpp_model_discovery_is_normalized(tmp_path) -> None:
 @pytest.mark.parametrize(
     ("configured_default", "advertised_model"),
     [
-        ("kevinbellm-27b", "kevinbellm-9b"),
-        ("kevinbellm-9b", "kevinbellm-27b"),
+        ("configured-default", "active-profile"),
+        ("missing-preference", "deployed-model"),
     ],
 )
 def test_llamacpp_model_discovery_follows_active_service_profile(
     tmp_path, configured_default: str, advertised_model: str
 ) -> None:
     settings = replace(
-        _settings(tmp_path, backend="llamacpp"),
+        _settings(tmp_path),
         default_model=configured_default,
-        preferred_models=("kevinbellm-9b", "kevinbellm-27b"),
+        preferred_models=("active-profile", "deployed-model"),
     )
 
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
-            json={"data": [{"id": advertised_model, "meta": {"n_params": 9_000_000_000}}]},
+            json={"data": [{"id": advertised_model, "meta": {"n_params": 27_000_000_000}}]},
         )
 
     async def run():
@@ -175,7 +167,7 @@ def test_llamacpp_model_discovery_follows_active_service_profile(
 
 
 def test_llamacpp_chat_completion_is_normalized(tmp_path) -> None:
-    settings = _settings(tmp_path, backend="llamacpp")
+    settings = _settings(tmp_path)
     requests: list[dict] = []
 
     def _sse(*chunks: dict) -> bytes:
@@ -225,6 +217,7 @@ def test_llamacpp_chat_completion_is_normalized(tmp_path) -> None:
     assert requests[0]["stream"] is True
     assert requests[0]["max_tokens"] == 2_048
     assert requests[0]["temperature"] == 0.3
+    assert "backend_sampling" not in requests[0]
     assert requests[0]["reasoning_effort"] == "none"
     assert requests[0]["chat_template_kwargs"] == {"enable_thinking": False}
     assert requests[0]["parse_tool_calls"] is True
@@ -235,11 +228,44 @@ def test_llamacpp_chat_completion_is_normalized(tmp_path) -> None:
     assert "think" not in requests[0]
 
 
+def test_fast_mode_omits_tools_and_enables_backend_sampling(tmp_path) -> None:
+    settings = _settings(tmp_path)
+    requests: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "text/event-stream"},
+            content=(
+                'data: {"choices":[{"index":0,"delta":{"content":"Fast answer"}}]}\n\n'
+                "data: [DONE]\n\n"
+            ).encode(),
+        )
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await run_chat(
+                client,
+                settings,
+                "test-model",
+                [{"role": "user", "content": "answer locally"}],
+                lambda _event, _payload: asyncio.sleep(0),
+                tools_enabled=False,
+            )
+
+    assert asyncio.run(run()) == ("Fast answer", [])
+    assert len(requests) == 1
+    assert requests[0]["backend_sampling"] is True
+    assert "tools" not in requests[0]
+    assert "tool_choice" not in requests[0]
+
+
 @pytest.mark.parametrize("upstream_call_id", ["call-from-server", None])
 def test_llamacpp_tool_call_round_trip(
     monkeypatch, tmp_path, upstream_call_id: str | None
 ) -> None:
-    settings = _settings(tmp_path, backend="llamacpp")
+    settings = _settings(tmp_path)
     requests: list[dict] = []
 
     def _sse(*chunks: dict) -> bytes:
@@ -395,7 +421,7 @@ def test_sources_stay_structured_and_are_never_appended_to_the_answer(
 
 def test_reasoning_is_opt_in_and_never_enters_the_answer(tmp_path) -> None:
     """Fast mode suppresses thinking; reasoning mode streams it on its own channel."""
-    settings = _settings(tmp_path, backend="llamacpp")
+    settings = _settings(tmp_path)
     requests: list[dict] = []
 
     def _sse(*chunks: dict) -> bytes:

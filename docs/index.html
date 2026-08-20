@@ -141,7 +141,7 @@
         <div class="section-heading compact">
           <p class="kicker">Owned compute</p>
           <h2 id="hardware-title">One host. Two pooled GPUs.</h2>
-          <p>Both cards live in the same machine and share one resident model. There is no second host and no network hop in the inference path.</p>
+          <p>Both cards live in Machine A and share one resident model without a network hop in the inference path.</p>
         </div>
 
         <div class="host-grid">
@@ -167,7 +167,7 @@
 
         <p class="pool-note">
           <strong>Capacity bought with speed.</strong>
-          Pooling both cards keeps a 27B model entirely in VRAM. That is far slower than the 9B it replaced, and still far faster than spilling any of it into system RAM.
+          Pooling both cards keeps the 27B model entirely in VRAM, which is still far faster than spilling any of it into system RAM.
         </p>
 
         <div class="boot-note">
