@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -20,6 +21,34 @@ MAX_TOOL_CALLS = 6
 MAX_TOOL_ROUNDS = 6
 MAX_ASSISTANT_CHARS = 50_000
 
+# Once the bounded loop withdraws the tools, a tool-eager model still tries to call
+# one. llama.cpp only parses tool calls when the request carries a tool schema, so
+# with the schema gone the attempt returns as literal text and lands in the answer.
+# Qwen3.8-27B hits this on nearly every multi-tool question where Qwen3.5-9B did not.
+# A trailing *user* turn stops it. A trailing system turn is not an option: Qwen's
+# chat template rejects a late system message and llama.cpp answers HTTP 500. Sending
+# tool_choice="none" with the schema does not suppress the attempt either.
+FINAL_ANSWER_INSTRUCTION = (
+    "The tools are now unavailable and no further tool calls are possible. "
+    "Using only the tool results already gathered above, write the final answer to "
+    "my original question now. Do not emit a tool call or any XML tag."
+)
+
+# Belt-and-braces for the same failure: never show tool markup to the user, even if
+# the instruction above is ignored or a call is cut off mid-emission.
+_TOOL_SYNTAX_RE = re.compile(
+    r"<tool_call\b.*?</tool_call\s*>"
+    r"|<function\s*=.*?</function\s*>"
+    r"|<\|tool_call(?:_start|_end)?\|>",
+    re.DOTALL | re.IGNORECASE,
+)
+# A call cut off by the token budget leaves an unterminated opener. Match one only
+# at the start of a line, which is how a model emits it, so an answer that merely
+# mentions the syntax inline is not truncated.
+_TRUNCATED_CALL_RE = re.compile(
+    r"(?m)^[ \t]*(?:<tool_call\b|<function\s*=|<\|tool_call)"
+)
+
 EmitEvent = Callable[[str, dict[str, Any]], Awaitable[None]]
 OnDelta = Callable[[str], Awaitable[None]]
 
@@ -28,6 +57,22 @@ OnDelta = Callable[[str], Awaitable[None]]
 # allowance thinking and never emit a visible answer. Both fit the 32k context.
 ANSWER_MAX_TOKENS = 2_048
 REASONING_MAX_TOKENS = 8_192
+
+
+def _strip_tool_syntax(text: str) -> str:
+    """Remove tool-call markup a model emitted as prose after tools were withdrawn."""
+    if not text:
+        return text
+    cleaned = _TOOL_SYNTAX_RE.sub("", text)
+    truncated = _TRUNCATED_CALL_RE.search(cleaned)
+    if truncated is not None:
+        cleaned = cleaned[: truncated.start()]
+    return cleaned.strip()
+
+
+def _final_answer_turns(conversation: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The conversation plus the turn that makes the model stop calling tools."""
+    return [*conversation, {"role": "user", "content": FINAL_ANSWER_INSTRUCTION}]
 
 
 class AssistantError(Exception):
@@ -585,7 +630,7 @@ async def run_chat(
                     client,
                     settings,
                     model,
-                    conversation,
+                    _final_answer_turns(conversation),
                     include_tools=False,
                     on_delta=on_delta,
                     on_reasoning=reasoning_sink,
@@ -635,7 +680,7 @@ async def run_chat(
             client,
             settings,
             model,
-            conversation,
+            _final_answer_turns(conversation),
             include_tools=False,
             on_delta=on_delta,
             on_reasoning=reasoning_sink,
@@ -644,6 +689,9 @@ async def run_chat(
         raw_content = message.get("content")
         final_content = raw_content if isinstance(raw_content, str) else ""
 
+    # A tool-eager model can still emit tool markup as prose once the tools are
+    # withdrawn, and the client renders this "done" text as the stored answer.
+    final_content = _strip_tool_syntax(final_content)
     if not final_content.strip():
         raise AssistantError("The local model returned an empty answer")
     # Sources travel as structured data for the browser's own citation card.

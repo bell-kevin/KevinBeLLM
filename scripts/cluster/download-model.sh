@@ -17,6 +17,7 @@ Usage: download-model.sh [--preset NAME] [--output PATH] [--verify-only]
 
 Presets:
   9b-q6_k       Qwen3.5-9B Q6_K (default; standalone Machine A service)
+  27b-iq4_xs    Qwen3.8-27B UD-IQ4_XS (Machine A standalone, split over both GPUs)
   27b-q4_k_m    Qwen3.5-27B Q4_K_M (optional two-node RPC service)
   embed-m3      BAAI bge-m3 Q8_0 embeddings (optional Machine B retrieval)
   rerank-m3     BAAI bge-reranker-v2-m3 Q8_0 (optional Machine B retrieval)
@@ -60,6 +61,13 @@ case "${preset}" in
     model_filename='Qwen_Qwen3.5-9B-Q6_K.gguf'
     model_bytes='7958818848'
     model_sha256='073a9275e65d9c8cd2819cf5f77b99fbaa6e87ba591da6bbaa86ec073a64bfef'
+    ;;
+  27b-iq4_xs)
+    model_repo='unsloth/Qwen3.8-27B-GGUF'
+    model_revision='4ca720788d1e01f1bff70c033e0d0028fd02e502'
+    model_filename='Qwen3.8-27B-UD-IQ4_XS.gguf'
+    model_bytes='14252845984'
+    model_sha256='40fac4050e940397dbf13087afd50f4734a11805bf9d65ef8ddd7483470e6199'
     ;;
   27b-q4_k_m)
     model_repo='bartowski/Qwen_Qwen3.5-27B-GGUF'

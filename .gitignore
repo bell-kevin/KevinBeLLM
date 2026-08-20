@@ -24,6 +24,7 @@ known_hosts*
 .venv/
 .venv-*/
 .pytest_cache/
+.hypothesis/
 __pycache__/
 .mypy_cache/
 .ruff_cache/
