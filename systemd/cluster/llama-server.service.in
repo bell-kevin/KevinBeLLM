@@ -8,28 +8,43 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-# Measured RTX 3060 defaults. The private env file supplies the verified model
-# path/alias and may tune performance; API and security arguments stay fixed.
+# Measured defaults for the RTX 3060 + RTX 3070 pair in Machine A. The private
+# env file supplies the verified model path/alias and may tune performance;
+# API and security arguments stay fixed.
 Environment=KEVINBELLM_LLAMA_CTX_SIZE=32768
 Environment=KEVINBELLM_LLAMA_BATCH_SIZE=2048
 Environment=KEVINBELLM_LLAMA_UBATCH_SIZE=512
 Environment=KEVINBELLM_LLAMA_THREADS=8
 Environment=KEVINBELLM_LLAMA_PARALLEL=1
 Environment=KEVINBELLM_LLAMA_GPU_LAYERS=all
-Environment=KEVINBELLM_LLAMA_CACHE_TYPE_K=f16
-Environment=KEVINBELLM_LLAMA_CACHE_TYPE_V=f16
+Environment=KEVINBELLM_LLAMA_CACHE_TYPE_K=q8_0
+Environment=KEVINBELLM_LLAMA_CACHE_TYPE_V=q8_0
 Environment=KEVINBELLM_LLAMA_FLASH_ATTN=on
 Environment=KEVINBELLM_LLAMA_SPEC_DRAFT_N_MAX=2
-Environment=LLAMA_MODEL_ALIAS=kevinbellm-9b
+Environment=LLAMA_MODEL_ALIAS=kevinbellm-27b
+# Dual-GPU: CUDA_DEVICE_ORDER=PCI_BUS_ID above makes CUDA0 the 12 GiB 3060 and
+# CUDA1 the 8 GiB 3070 (x1 riser). Layer-split measured to cost only ~7% decode
+# versus a single card, so the full ~19.3 GiB pool is usable. Set SPLIT_MODE=none
+# and DEVICE_LIST=CUDA0 to fall back to 3060-only.
+Environment=KEVINBELLM_LLAMA_CUDA_DEVICES=0,1
+Environment=KEVINBELLM_LLAMA_SPLIT_MODE=layer
+Environment=KEVINBELLM_LLAMA_DEVICE_LIST=CUDA0,CUDA1
+Environment=KEVINBELLM_LLAMA_TENSOR_SPLIT=64,36
+# --cache-reuse lets llama.cpp KV-shift a partially matching prefix instead of
+# reprefilling it. 0 disables it. Raising it only helps when the prefix changes
+# in the middle rather than only growing at the end.
+Environment=KEVINBELLM_LLAMA_CACHE_REUSE=0
+Environment=KEVINBELLM_LLAMA_SPEC_TYPE=draft-mtp
 EnvironmentFile=@STANDALONE_ENV@
 # b10451 auto-loads /etc/llama.cpp/config.ini and an XDG/HOME-derived user
 # config before parsing CLI options. Remove redirectable home/config variables;
 # getpwuid then resolves %h/.config, which is inaccessible below.
 UnsetEnvironment=XDG_CONFIG_HOME HOME LLAMA_ARG_RPC LLAMA_ARG_RPC_SERVERS LLAMA_ARG_HF_REPO LLAMA_ARG_HF_FILE LLAMA_ARG_MODEL_URL LLAMA_ARG_DOCKER_REPO LLAMA_ARG_MODELS_PRESET LLAMA_ARG_MODELS_DIR
 ExecStartPre=/usr/bin/test -r "${MODEL_PATH}"
-# The endpoint, one-GPU selection, disabled auxiliary surfaces, and absence of
-# --rpc are intentional and cannot be changed through standalone.env.
-ExecStart=/usr/bin/env -i CUDA_VISIBLE_DEVICES=0 "@LLAMA_SERVER_BIN@" --model ${MODEL_PATH} --alias ${LLAMA_MODEL_ALIAS} --host 127.0.0.1 --port 8080 --offline --no-agent --ctx-size ${KEVINBELLM_LLAMA_CTX_SIZE} --batch-size ${KEVINBELLM_LLAMA_BATCH_SIZE} --ubatch-size ${KEVINBELLM_LLAMA_UBATCH_SIZE} --threads ${KEVINBELLM_LLAMA_THREADS} --parallel ${KEVINBELLM_LLAMA_PARALLEL} --n-gpu-layers ${KEVINBELLM_LLAMA_GPU_LAYERS} --split-mode none --device CUDA0 --cache-type-k ${KEVINBELLM_LLAMA_CACHE_TYPE_K} --cache-type-v ${KEVINBELLM_LLAMA_CACHE_TYPE_V} --flash-attn ${KEVINBELLM_LLAMA_FLASH_ATTN} --load-mode mmap --no-mmproj --no-webui --no-slots --spec-type draft-mtp --spec-draft-n-max ${KEVINBELLM_LLAMA_SPEC_DRAFT_N_MAX}
+# The endpoint, disabled auxiliary surfaces, and absence of --rpc are intentional
+# and cannot be changed through standalone.env. GPU selection moved to the
+# KEVINBELLM_LLAMA_CUDA_DEVICES / SPLIT_MODE / DEVICE_LIST / TENSOR_SPLIT vars.
+ExecStart=/usr/bin/env -i CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_VISIBLE_DEVICES=${KEVINBELLM_LLAMA_CUDA_DEVICES} "@LLAMA_SERVER_BIN@" --model ${MODEL_PATH} --alias ${LLAMA_MODEL_ALIAS} --host 127.0.0.1 --port 8080 --offline --no-agent --ctx-size ${KEVINBELLM_LLAMA_CTX_SIZE} --batch-size ${KEVINBELLM_LLAMA_BATCH_SIZE} --ubatch-size ${KEVINBELLM_LLAMA_UBATCH_SIZE} --threads ${KEVINBELLM_LLAMA_THREADS} --parallel ${KEVINBELLM_LLAMA_PARALLEL} --n-gpu-layers ${KEVINBELLM_LLAMA_GPU_LAYERS} --split-mode ${KEVINBELLM_LLAMA_SPLIT_MODE} --device ${KEVINBELLM_LLAMA_DEVICE_LIST} --tensor-split ${KEVINBELLM_LLAMA_TENSOR_SPLIT} --cache-type-k ${KEVINBELLM_LLAMA_CACHE_TYPE_K} --cache-type-v ${KEVINBELLM_LLAMA_CACHE_TYPE_V} --flash-attn ${KEVINBELLM_LLAMA_FLASH_ATTN} --load-mode mmap --no-mmproj --no-webui --no-slots --spec-type ${KEVINBELLM_LLAMA_SPEC_TYPE} --spec-draft-n-max ${KEVINBELLM_LLAMA_SPEC_DRAFT_N_MAX} --cache-reuse ${KEVINBELLM_LLAMA_CACHE_REUSE}
 Restart=on-failure
 RestartSec=15
 TimeoutStartSec=0

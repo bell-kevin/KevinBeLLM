@@ -58,16 +58,6 @@ cluster_env_value() {
   printf '%s' "${value}"
 }
 
-cluster_require_rpc_ack() {
-  local env_file="$1"
-  local required='YES_I_ACCEPT_UNAUTHENTICATED_RCE_RISK'
-  local actual
-
-  actual="$(cluster_env_value "${env_file}" ACKNOWLEDGE_LLAMA_RPC_RCE || true)"
-  [[ "${actual}" == "${required}" ]] || cluster_die \
-    "RPC risk is not acknowledged in ${env_file}. Read infra/cluster/README.md, then set ACKNOWLEDGE_LLAMA_RPC_RCE=${required}."
-}
-
 cluster_sed_escape_replacement() {
   printf '%s' "$1" | sed -e 's/[\\&|]/\\&/g'
 }

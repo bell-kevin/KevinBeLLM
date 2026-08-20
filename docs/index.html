@@ -91,7 +91,7 @@
               <div class="avatar" aria-hidden="true">K</div>
               <div class="message">
                 <p class="message-label">Fast standalone inference</p>
-                <p>Machine A keeps the everyday model fully resident across both of its GPUs; no second machine is required for normal service.</p>
+                <p>The everyday model stays fully resident across both GPUs in a single owned machine; nothing leaves it to answer.</p>
                 <div class="tool-pills" aria-label="Deployment components">
                   <span>RTX 3060 + RTX 3070 · 20 GiB</span>
                   <span>≈26 tokens/s measured</span>
@@ -140,27 +140,27 @@
       <section class="hardware section" id="hardware" aria-labelledby="hardware-title">
         <div class="section-heading compact">
           <p class="kicker">Owned compute</p>
-          <h2 id="hardware-title">One primary host. Two pooled GPUs.</h2>
-          <p>Both cards now live in Machine A and share one model; Machine B remains optional and carries no inference dependency.</p>
+          <h2 id="hardware-title">One host. Two pooled GPUs.</h2>
+          <p>Both cards live in the same machine and share one resident model. There is no second host and no network hop in the inference path.</p>
         </div>
 
         <div class="host-grid">
           <article class="host-card">
-            <p class="host-label">Machine A · primary</p>
-            <h3>RTX 3060 + RTX 3070</h3>
+            <p class="host-label">Primary GPU</p>
+            <h3>GeForce RTX 3060</h3>
             <dl>
-              <div><dt>VRAM</dt><dd>12 GiB + 8 GiB GDDR6</dd></div>
-              <div><dt>Role</dt><dd>App and fully resident 27B model, layer-split across both cards</dd></div>
-              <div><dt>Network</dt><dd>Outbound tunnel; loopback origins</dd></div>
+              <div><dt>VRAM</dt><dd>12 GiB GDDR6</dd></div>
+              <div><dt>Link</dt><dd>PCIe 2.0 x16</dd></div>
+              <div><dt>Role</dt><dd>App, and the lower layers of the 27B model</dd></div>
             </dl>
           </article>
           <article class="host-card">
-            <p class="host-label">Machine B · optional</p>
-            <h3>Document retrieval</h3>
+            <p class="host-label">Secondary GPU</p>
+            <h3>GeForce RTX 3070</h3>
             <dl>
-              <div><dt>Role</dt><dd>Private document index for the search tool</dd></div>
-              <div><dt>Default state</dt><dd>No inference dependency</dd></div>
-              <div><dt>Availability</dt><dd>Started deliberately; absent by default</dd></div>
+              <div><dt>VRAM</dt><dd>8 GiB GDDR6</dd></div>
+              <div><dt>Link</dt><dd>PCIe 2.0 x1 riser</dd></div>
+              <div><dt>Role</dt><dd>Holds the upper layers of the same model</dd></div>
             </dl>
           </article>
         </div>
@@ -174,7 +174,7 @@
           <span class="boot-icon" aria-hidden="true">⌁</span>
           <div>
             <strong>Encrypted cold boots require a person.</strong>
-            <p>After shutdown or power loss, Machine A must be physically powered on and have its LUKS passphrase entered. Machine B needs an unlock only when intentionally used; no remote feature bypasses either prompt.</p>
+            <p>After shutdown or power loss, the machine must be physically powered on and have its LUKS passphrase entered. No remote feature bypasses that prompt.</p>
           </div>
         </div>
       </section>
