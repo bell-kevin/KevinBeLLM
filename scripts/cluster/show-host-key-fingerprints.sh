@@ -17,6 +17,7 @@ done
 
 cat <<'EOF'
 
-Read the ED25519 SHA256 fingerprint from Machine B's physical console (or an
-already trusted session), then pass it to pin-worker-host-key.sh on Machine A.
+Read the ED25519 SHA256 fingerprint from this machine's physical console (or an
+already trusted session), then compare it with what SSH shows the first time
+the administration laptop connects. Never accept an unverified fingerprint.
 EOF

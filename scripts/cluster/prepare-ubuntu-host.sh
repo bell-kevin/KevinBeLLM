@@ -14,7 +14,7 @@ usage() {
   cat <<'EOF'
 Usage: prepare-ubuntu-host.sh [--hostname NAME] [--with-ubuntu-cuda]
 
-Installs the common build/SSH packages on Machine A or Machine B. The optional
+Installs the common build/SSH packages on Machine A. The optional
 Ubuntu CUDA package is convenient but may lag NVIDIA's supported toolkit; omit
 it when nvcc is already installed from NVIDIA's repository.
 EOF

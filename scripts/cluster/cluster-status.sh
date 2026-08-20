@@ -6,18 +6,12 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 . "${script_dir}/common.sh"
 
-role=""
 usage() {
-  printf 'Usage: cluster-status.sh --role standalone|coordinator|worker\n'
+  printf 'Usage: cluster-status.sh\n\nReports Machine A inference health and proves no RPC listener exists.\n'
 }
 
 while (($#)); do
   case "$1" in
-    --role)
-      (($# >= 2)) || cluster_die "--role requires a value."
-      role="$2"
-      shift 2
-      ;;
     -h|--help)
       usage
       exit 0
@@ -27,8 +21,6 @@ while (($#)); do
       ;;
   esac
 done
-[[ "${role}" == 'standalone' || "${role}" == 'coordinator' || "${role}" == 'worker' ]] || \
-  cluster_die "--role must be standalone, coordinator, or worker."
 cluster_require_command ss
 
 result=0
@@ -64,35 +56,28 @@ check_no_listener() {
   fi
 }
 
-if [[ "${role}" == 'worker' ]]; then
-  systemctl --user --no-pager --full status kevinbellm-rpc-worker.service || result=1
-  check_listener 50052 127.0.0.1
-elif [[ "${role}" == 'standalone' ]]; then
-  systemctl --user --no-pager --full status kevinbellm-llama.service || result=1
-  check_listener 8080 127.0.0.1
-  check_no_listener 50052
-  check_no_listener 50053
-  for rpc_unit in kevinbellm-rpc-tunnel.service kevinbellm-rpc-worker.service; do
-    if systemctl --user is-active --quiet "${rpc_unit}"; then
-      cluster_warn "${rpc_unit} is active during standalone operation."
-      result=1
-    else
-      cluster_info "Verified ${rpc_unit} is inactive"
-    fi
-    if systemctl --user is-enabled --quiet "${rpc_unit}" 2>/dev/null; then
-      cluster_warn "${rpc_unit} remains enabled for a future boot."
-      result=1
-    else
-      cluster_info "Verified ${rpc_unit} is not enabled"
-    fi
-  done
-else
-  systemctl --user --no-pager --full status kevinbellm-rpc-tunnel.service kevinbellm-llama.service || result=1
-  check_listener 50053 127.0.0.1
-  check_listener 8080 127.0.0.1
-fi
+systemctl --user --no-pager --full status kevinbellm-llama.service || result=1
+check_listener 8080 127.0.0.1
+# There is one host and no RPC. Prove it rather than assuming it: a leftover
+# unit from an older two-node install would otherwise be invisible here.
+check_no_listener 50052
+check_no_listener 50053
+for rpc_unit in kevinbellm-rpc-tunnel.service kevinbellm-rpc-worker.service; do
+  if systemctl --user is-active --quiet "${rpc_unit}"; then
+    cluster_warn "${rpc_unit} is active; this deployment must not run RPC."
+    result=1
+  else
+    cluster_info "Verified ${rpc_unit} is inactive"
+  fi
+  if systemctl --user is-enabled --quiet "${rpc_unit}" 2>/dev/null; then
+    cluster_warn "${rpc_unit} remains enabled for a future boot."
+    result=1
+  else
+    cluster_info "Verified ${rpc_unit} is not enabled"
+  fi
+done
 
-if [[ "${role}" != 'worker' ]] && command -v curl >/dev/null 2>&1; then
+if command -v curl >/dev/null 2>&1; then
   cluster_info "llama-server health response"
   curl --silent --show-error --fail-with-body --max-time 5 http://127.0.0.1:8080/health || result=1
   printf '\n'

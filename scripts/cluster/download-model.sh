@@ -7,7 +7,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 . "${script_dir}/common.sh"
 
-preset='9b-q6_k'
+preset='27b-iq4_xs'
 output_file=''
 verify_only=0
 
@@ -16,11 +16,8 @@ usage() {
 Usage: download-model.sh [--preset NAME] [--output PATH] [--verify-only]
 
 Presets:
-  9b-q6_k       Qwen3.5-9B Q6_K (default; standalone Machine A service)
-  27b-iq4_xs    Qwen3.8-27B UD-IQ4_XS (Machine A standalone, split over both GPUs)
-  27b-q4_k_m    Qwen3.5-27B Q4_K_M (optional two-node RPC service)
-  embed-m3      BAAI bge-m3 Q8_0 embeddings (optional Machine B retrieval)
-  rerank-m3     BAAI bge-reranker-v2-m3 Q8_0 (optional Machine B retrieval)
+  27b-iq4_xs    Qwen3.8-27B UD-IQ4_XS (default; layer-split over both GPUs)
+  9b-q6_k       Qwen3.5-9B Q6_K (smaller, much faster, RTX 3060 alone)
 
 Downloads the selected artifact at an immutable revision, then verifies both
 byte count and SHA-256. A .part file is kept for safe resume after an
@@ -68,31 +65,6 @@ case "${preset}" in
     model_filename='Qwen3.8-27B-UD-IQ4_XS.gguf'
     model_bytes='14252845984'
     model_sha256='40fac4050e940397dbf13087afd50f4734a11805bf9d65ef8ddd7483470e6199'
-    ;;
-  27b-q4_k_m)
-    model_repo='bartowski/Qwen_Qwen3.5-27B-GGUF'
-    model_revision='d7b113c40283f4d99f4eb0ec20d126ad653cc736'
-    model_filename='Qwen_Qwen3.5-27B-Q4_K_M.gguf'
-    model_bytes='17984872928'
-    model_sha256='81657841d62f1821c748d0fea6c260b7d3508844fe4e9250253ef81c4e4d9edf'
-    ;;
-  embed-m3)
-    # MIT-licensed BAAI bge-m3, 568M parameters, 1024-dimension CLS embeddings.
-    # About 610 MiB of the RTX 3070's 8 GiB; Machine A never loads it.
-    model_repo='gpustack/bge-m3-GGUF'
-    model_revision='2d48f1737679ad900d5c26c5aad5410e9c70fdca'
-    model_filename='bge-m3-Q8_0.gguf'
-    model_bytes='634553760'
-    model_sha256='950f4a8e5e19477a6d3c26d2f162233c20002c601f75e4b002e3239997821167'
-    ;;
-  rerank-m3)
-    # Apache-2.0 BAAI bge-reranker-v2-m3, the cross-encoder counterpart to
-    # embed-m3. llama.cpp serves it through --reranking.
-    model_repo='gpustack/bge-reranker-v2-m3-GGUF'
-    model_revision='3093af03b1a635e67b084b1d8c03c5f5e020fd05'
-    model_filename='bge-reranker-v2-m3-Q8_0.gguf'
-    model_bytes='635676416'
-    model_sha256='a43c7c9b11a4c1517e5bf95151960e1621d1b72f7a493364b01e386cf1aaa1d3'
     ;;
   *)
     cluster_die "Unknown model preset: ${preset}"

@@ -19,7 +19,6 @@ Usage: install-llama-cpp.sh [--install-dir PATH] [--jobs N]
 
 Builds the immutable llama.cpp ${llama_ref} commit for Ampere compute capability
 8.6. Everyday standalone service needs it only on Machine A. Run the same
-pinned build on Machine B only for the optional RPC experiment.
 EOF
 }
 

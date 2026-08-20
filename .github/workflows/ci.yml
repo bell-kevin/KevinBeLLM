@@ -40,22 +40,6 @@ jobs:
         working-directory: services/assistant-web
         run: python -m pytest -q
 
-      - name: Install locked Machine B retrieval test dependencies
-        shell: bash
-        run: |
-          # The retrieval lock is compiled for Python 3.12 because Machine B runs
-          # Ubuntu 24.04 and install-retrieval.sh builds its venv from the system
-          # interpreter. Test against that same version, not setup-python's 3.13.
-          system_python=/usr/bin/python3
-          "${system_python}" -c 'import sys; assert sys.version_info[:2] == (3, 12), sys.version'
-          "${system_python}" -m venv .venv-doc-retrieval
-          .venv-doc-retrieval/bin/python -m pip install --quiet --require-hashes \
-            -r services/doc-retrieval/requirements-dev.lock
-
-      - name: Run Machine B retrieval tests
-        working-directory: services/doc-retrieval
-        run: ../../.venv-doc-retrieval/bin/python -m pytest -q
-
       - name: Check shell syntax
         shell: bash
         run: git ls-files -z '*.sh' | xargs -0 -n1 bash -n
@@ -63,10 +47,6 @@ jobs:
       - name: Check standalone inference contract
         shell: bash
         run: bash scripts/check-standalone-contract.sh
-
-      - name: Check optional retrieval contract
-        shell: bash
-        run: bash scripts/check-retrieval-contract.sh
 
       - name: Check browser JavaScript syntax
         run: |

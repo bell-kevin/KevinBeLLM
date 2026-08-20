@@ -39,7 +39,7 @@ The connector deliberately uses host networking so that a rootless container
 can reach Machine A's loopback-bound origin. The Compose service publishes no
 ports, binds its metrics endpoint to loopback, runs as Machine A's unprivileged
 UID/GID, drops every Linux capability, and uses a read-only root filesystem.
-Keep Machine B out of this path. The optional two-node inference profile does
+There is one host in this path. This deployment does
 not change the browser-facing origin or give B a public route.
 
 ## Prerequisites
@@ -285,7 +285,7 @@ and disable or remove the published route before correcting Access:
 - Upgrade the pinned image deliberately after reviewing Cloudflare release
   notes and replacing both the tag and Linux/AMD64 digest.
 - Check connector health in the tunnel overview and locally with Compose `ps`.
-- Do not run a connector on Machine B and do not make Machine A's origin listen
+- Do not run a second connector anywhere and do not make Machine A's origin listen
   on `0.0.0.0` merely to satisfy the tunnel.
 - Stopping the connector removes remote access without stopping local inference.
 

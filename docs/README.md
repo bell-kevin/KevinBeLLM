@@ -7,7 +7,7 @@ credential collection, runtime probes, model-health checks, or private
 configuration.
 
 The page explains the fully GPU-resident everyday service, which spans the
-RTX 3060 and the RTX 3070 now sharing Machine A, and links authorized users to
+RTX 3060 and RTX 3070 in the single owned host, and links authorized users to
 the protected assistant at:
 
 ```text

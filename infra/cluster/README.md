@@ -1,4 +1,4 @@
-# Machine A inference and optional two-node mode
+# Machine A inference
 
 The safe everyday deployment runs entirely on Machine A:
 
@@ -6,13 +6,12 @@ The safe everyday deployment runs entirely on Machine A:
 Windows laptop --SSH--> Machine A:22
                             |-- UI 127.0.0.1:3000
                             `-- llama-server 127.0.0.1:8080
-                                `-- RTX 3060: Qwen3.5-9B Q6_K
+                                `-- RTX 3060 + RTX 3070: Qwen3.8-27B IQ4_XS
 ```
 
-Machine B is not a dependency. No llama.cpp RPC process, client address,
-tunnel, or listener is used in this profile. The optional 27B experiment is
-retained below and in [the detailed two-node guide](../../docs/TWO_NODE_SETUP.md),
-but it remains disabled unless the operator separately accepts its risk.
+There is one host. No llama.cpp RPC process, client address, tunnel, or
+listener is used, and the everyday model is resident across both of Machine A's
+GPUs rather than distributed over a network.
 
 There is deliberately no LAN listener or router port-forward for 3000, 8080,
 50052, or 50053.
@@ -21,7 +20,7 @@ There is deliberately no LAN listener or router port-forward for 3000, 8080,
 
 Full-disk encryption means SSH and systemd cannot start until someone physically
 powers on the required host and enters its LUKS passphrase. Everyday service
-requires only Machine A. User lingering lets inference, the application, and
+requires only this host. User lingering lets inference, the application, and
 the outbound Cloudflare connector return after A is unlocked without a desktop
 login. Automatic TPM or initramfs-network unlock has a different threat model
 and is outside this deployment.
@@ -268,230 +267,6 @@ For private LAN access from Windows:
 
 This opens only laptop-loopback port 3000. `-ForwardLlamaApi` is an explicit
 diagnostic option for laptop-loopback port 18080 and never forwards RPC.
-
-## Optional Machine B document retrieval
-
-This profile gives Machine B a job of its own instead of a share of Machine A's
-job. It adds a `search_documents` tool backed by a private index of your own
-files, embedded and reranked entirely on the RTX 3070. It uses no llama.cpp RPC,
-so it needs no risk acknowledgment.
-
-```text
-Machine A                                Machine B (RTX 3070)
-assistant-web
-  └─ search_documents ─► 127.0.0.1:8091 ──ssh -L──► 127.0.0.1:8091  retrieval API
-                                                      ├─ 127.0.0.1:8081  bge-m3 embeddings
-                                                      └─ 127.0.0.1:8082  bge-reranker-v2-m3
-```
-
-### What this costs Machine A
-
-Almost nothing, and exactly nothing while it is switched off.
-
-- **Disabled (the default).** With `DOC_RETRIEVAL_URL` unset, the assistant
-  advertises no document tool and its system prompt is byte-identical to the one
-  it sends today. Two tests pin that.
-- **Enabled, idle.** One extra tool definition and one prompt paragraph, about
-  150 prompt tokens. At the measured 1,350 tokens/second prefill that is roughly
-  0.1 s added to time-to-first-token, and nothing at all to generation speed.
-- **Enabled, tool used.** One HTTP round trip to Machine B. All embedding,
-  vector search, and reranking happen there.
-- **Machine B powered off.** The connect budget is capped at 2 s, and after
-  three consecutive failures the app stops calling Machine B entirely for a
-  120 s cooldown, so a locked worker costs nothing on later turns. A retrieval
-  failure is an ordinary tool error: the model answers without local documents
-  and says so.
-
-No Machine A unit gains a dependency on Machine B. `check-standalone-contract.sh`
-fails the build if the everyday inference unit ever references retrieval, and
-`check-retrieval-contract.sh` fails if the tunnel unit gains a `Requires=`,
-`Before=`, or similar relationship that could delay Machine A's start.
-
-### 1. Machine B: models and services
-
-At Machine B's console, from this repository:
-
-```bash
-./scripts/cluster/download-model.sh --preset embed-m3
-./scripts/cluster/download-model.sh --preset rerank-m3
-./scripts/cluster/install-retrieval.sh
-```
-
-The first run creates `~/.config/kevinbellm-cluster/retrieval.env` and stops so
-you can set `RETRIEVAL_SOURCE_DIR` to the documents you want indexed. Then:
-
-```bash
-./scripts/cluster/install-retrieval.sh --enable-now
-./scripts/cluster/index-documents.sh
-./scripts/cluster/retrieval-status.sh --role server
-```
-
-`install-retrieval.sh` refuses to run on a host that already has
-`kevinbellm-llama.service`, because putting these models beside the everyday
-model would take VRAM from it. It verifies both GGUF digests, installs
-hash-pinned Python dependencies, and waits for both model servers to report
-healthy. If a `--pooling` or `--reranking` argument is rejected by your build,
-that appears here as an immediate exit; read
-`journalctl --user -u kevinbellm-embedding.service -e`.
-
-Preview what would be indexed before spending GPU time:
-
-```bash
-./scripts/cluster/index-documents.sh --dry-run
-```
-
-### 2. A dedicated key and a pinned host key
-
-Retrieval gets its own restricted account and its own key. Sharing the RPC
-tunnel's key would mean revoking one revokes the other, and the installers
-refuse that.
-
-On Machine A:
-
-```bash
-./scripts/cluster/generate-tunnel-key.sh \
-  --key-file ~/.ssh/kevinbellm_retrieval_tunnel_ed25519
-```
-
-On Machine B, as root, with Machine A's reserved LAN address:
-
-```bash
-sudo ./scripts/cluster/install-retrieval-tunnel-key.sh \
-  --public-key-file /path/to/kevinbellm_retrieval_tunnel_ed25519.pub \
-  --from 192.168.0.10
-```
-
-That key cannot request a shell and can forward nowhere except Machine B
-loopback TCP 8091. It has no access to the RPC port.
-
-Back on Machine A, pin Machine B's host key into a dedicated file, using the
-fingerprint read at Machine B's physical console:
-
-```bash
-./scripts/cluster/pin-worker-host-key.sh \
-  --host 192.168.0.11 --fingerprint SHA256:... \
-  --known-hosts-file ~/.ssh/known_hosts.kevinbellm-retrieval
-```
-
-### 3. Machine A: the forward and the application setting
-
-```bash
-./scripts/cluster/install-retrieval-tunnel.sh --enable-now
-./scripts/cluster/retrieval-status.sh --role client
-```
-
-The client status check also re-verifies the everyday boundary: that 8080 is
-still loopback-only, that neither RPC port is listening, that no RPC unit is
-active, and that the inference unit still carries no `--rpc` argument.
-
-Retrieval stays inert until the application is pointed at the forward. Add this
-to the private root `.env` and restart the app:
-
-```dotenv
-DOC_RETRIEVAL_URL=http://127.0.0.1:8091
-```
-
-Removing that one line disables the feature completely and immediately.
-
-### Keeping the index current
-
-Re-run `./scripts/cluster/index-documents.sh` after your documents change. The
-API keeps serving the previous index until the rebuild succeeds, then the script
-restarts the service. There is no automatic rebuild: indexing saturates Machine
-B's GPU for as long as it takes, and it should be a deliberate act.
-
-If you rebuild with a different embedding model, the API detects the dimension
-change and returns a clear "rebuild the index" error instead of scoring
-nonsense against stale vectors.
-
-### Calibrating relevance
-
-`RETRIEVAL_MIN_SCORE` is unset by default, so every reranked passage is returned
-with its score attached. That is deliberate: a guessed threshold silently hides
-correct answers. Run real questions against your own collection, look at the
-`rerank_score` values for good and bad matches, and only then set a floor.
-Around 0 is the usual decision boundary for bge-reranker-v2-m3.
-
-### Turning it off
-
-Remove `DOC_RETRIEVAL_URL` from the root `.env` and restart the app. To stop the
-moving parts as well:
-
-```bash
-# Machine A
-systemctl --user disable --now kevinbellm-retrieval-tunnel.service
-# Machine B
-systemctl --user disable --now kevinbellm-doc-retrieval.service \
-  kevinbellm-embedding.service kevinbellm-reranker.service
-```
-
-The index directory is left alone so a later re-enable needs no rebuild. Delete
-it by hand if you want the extracted document text gone.
-
-## Optional 27B two-node profile
-
-Do not enable this merely because the second GPU exists. The standalone 9B
-profile is dramatically faster for interactive use and avoids the RPC parser.
-The two-node path is a capacity experiment for a larger dense model.
-
-### Mandatory RPC warning
-
-Upstream labels its RPC backend a fragile, insecure proof of concept without
-protocol authentication. It has had critical unauthenticated code-execution
-findings. An SSH tunnel limits who can reach the parser; it does not make that
-parser trusted. Treat access to either RPC loopback socket as code execution as
-the service user.
-
-Both private RPC role files must contain this exact deliberate acknowledgment,
-and installation also requires the command-line flag:
-
-```text
-ACKNOWLEDGE_LLAMA_RPC_RCE=YES_I_ACCEPT_UNAUTHENTICATED_RCE_RISK
-```
-
-If that risk is not accepted, stop here. Do not create the restricted account,
-start a worker, or expose any RPC address.
-
-### Retained workflow
-
-The complete host-key pinning, no-shell forwarding account, firewall, cache,
-benchmark, rollback, and troubleshooting instructions remain in
-[`docs/TWO_NODE_SETUP.md`](../../docs/TWO_NODE_SETUP.md). In summary:
-
-```bash
-# A: download the retained model without replacing the 9B file
-./scripts/cluster/download-model.sh --preset 27b-q4_k_m
-
-# B, only after the full tunnel setup and acknowledgment
-./scripts/cluster/install-services.sh \
-  --role worker --acknowledge-rpc-risk --enable-now
-
-# A, only after B is verified ready
-./scripts/cluster/install-services.sh \
-  --role coordinator --acknowledge-rpc-risk --enable-now
-```
-
-The coordinator installer renders the separately retained RPC template into the
-same `kevinbellm-llama.service` name, so the app endpoint stays stable. It never
-overwrites `standalone.env`, the 9B GGUF, `coordinator.env`, or tunnel keys.
-
-Return to the safe default on A with:
-
-```bash
-./scripts/cluster/install-services.sh --role standalone --enable-now
-./scripts/cluster/cluster-status.sh --role standalone
-```
-
-Then disable the worker on B if it was previously enabled:
-
-```bash
-systemctl --user disable --now kevinbellm-rpc-worker.service
-```
-
-The A installer disables its prior server, tunnel, and any locally installed
-worker before validating the standalone replacement. It reports—but never
-kills—an unknown process holding an RPC port. Model files and private profiles
-remain available for a later deliberate comparison.
 
 ## Operations
 
