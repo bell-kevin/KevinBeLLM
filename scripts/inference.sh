@@ -12,29 +12,10 @@ env_value() {
   fi
 }
 
-backend="$(env_value INFERENCE_BACKEND)"
-backend="${backend:-llamacpp}"
-
-case "${backend}" in
-  llamacpp)
-    base_url="$(env_value INFERENCE_BASE_URL)"
-    base_url="${base_url:-http://127.0.0.1:8080}"
-    health_path="/health"
-    unit_name="kevinbellm-llama.service"
-    ;;
-  ollama)
-    base_url="$(env_value INFERENCE_BASE_URL)"
-    base_url="${base_url:-$(env_value OLLAMA_URL)}"
-    base_url="${base_url:-$(env_value OLLAMA_BASE_URL)}"
-    base_url="${base_url:-http://127.0.0.1:11434}"
-    health_path="/api/version"
-    unit_name="ollama.service"
-    ;;
-  *)
-    echo "INFERENCE_BACKEND must be 'llamacpp' or 'ollama', not '${backend}'." >&2
-    exit 2
-    ;;
-esac
+base_url="$(env_value INFERENCE_BASE_URL)"
+base_url="${base_url:-http://127.0.0.1:8080}"
+health_path="/health"
+unit_name="kevinbellm-llama.service"
 
 base_url="${base_url%/}"
 case "${base_url}" in
@@ -55,9 +36,7 @@ start_service() {
   fi
   if ! systemctl --user start "${unit_name}"; then
     echo "Could not start ${unit_name}." >&2
-    if [[ "${backend}" == "llamacpp" ]]; then
-      echo "Install the standalone Machine A service described in infra/cluster/README.md." >&2
-    fi
+    echo "Install the standalone Machine A service described in infra/cluster/README.md." >&2
     return 1
   fi
 }
@@ -68,53 +47,46 @@ wait_for_service() {
   local attempt
   for ((attempt = 1; attempt <= attempts; attempt++)); do
     if healthy; then
-      printf '%s is ready at %s\n' "${backend}" "${base_url}"
+      printf 'llama.cpp is ready at %s\n' "${base_url}"
       return 0
     fi
     sleep "${delay}"
   done
-  printf '%s did not become ready at %s after %s attempts.\n' \
-    "${backend}" "${base_url}" "${attempts}" >&2
+  printf 'llama.cpp did not become ready at %s after %s attempts.\n' \
+    "${base_url}" "${attempts}" >&2
   journalctl --user -u "${unit_name}" -n 30 --no-pager 2>/dev/null || true
   return 1
 }
 
 show_models() {
-  local endpoint
-  if [[ "${backend}" == "llamacpp" ]]; then
-    endpoint="${base_url}/v1/models"
-  else
-    endpoint="${base_url}/api/tags"
-  fi
-  if ! python3 - "${backend}" "${endpoint}" <<'PY'
+  local endpoint="${base_url}/v1/models"
+  if ! python3 - "${endpoint}" <<'PY'
 import json
 import sys
 import urllib.request
 
-backend = sys.argv[1]
 try:
-    with urllib.request.urlopen(sys.argv[2], timeout=15) as response:
+    with urllib.request.urlopen(sys.argv[1], timeout=15) as response:
         payload = json.load(response)
 except Exception as exc:
     raise SystemExit(f"invalid model response: {exc}") from exc
 
-items = payload.get("data", []) if backend == "llamacpp" else payload.get("models", [])
+items = payload.get("data", [])
 print("Models:")
 for item in items:
     if not isinstance(item, dict):
         continue
-    model_id = item.get("id") if backend == "llamacpp" else (item.get("name") or item.get("model"))
+    model_id = item.get("id")
     if isinstance(model_id, str):
         print(f"  - {model_id}")
 PY
   then
-    echo "Models: ${backend} API unavailable" >&2
+    echo "Models: llama.cpp API unavailable" >&2
     return 1
   fi
 }
 
 case "${1:-}" in
-  backend) printf '%s\n' "${backend}" ;;
   url) printf '%s\n' "${base_url}" ;;
   health) healthy ;;
   start) start_service ;;
@@ -122,13 +94,13 @@ case "${1:-}" in
   ensure) start_service && wait_for_service ;;
   models) show_models ;;
   status)
-    printf '%s (%s)\n' "${backend}" "${base_url}"
+    printf 'llama.cpp (%s)\n' "${base_url}"
     systemctl --user --no-pager --full status "${unit_name}" 2>/dev/null | sed -n '1,10p' || true
     echo
     show_models || true
     ;;
   *)
-    echo "Usage: $0 {backend|url|health|start|wait|ensure|models|status}" >&2
+    echo "Usage: $0 {url|health|start|wait|ensure|models|status}" >&2
     exit 2
     ;;
 esac

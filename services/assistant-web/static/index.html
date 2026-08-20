@@ -209,6 +209,19 @@
               ></textarea>
               <button
                 class="reasoning-toggle"
+                id="fastToggle"
+                type="button"
+                role="switch"
+                aria-checked="false"
+                aria-label="Fast local mode"
+                title="Fast local mode: faster llama.cpp GPU sampling without live web, weather, or model tools"
+                hidden
+              >
+                <span class="reasoning-toggle-dot" aria-hidden="true"></span>
+                <span class="reasoning-toggle-text">Fast</span>
+              </button>
+              <button
+                class="reasoning-toggle"
                 id="reasoningToggle"
                 type="button"
                 role="switch"

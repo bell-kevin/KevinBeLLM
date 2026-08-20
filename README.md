@@ -7,8 +7,7 @@ https://bell-kevin.github.io/KevinBeLLM/
 https://assistant.kevin-bell.com/
 
 KevinBeLLM is an AGPL-licensed, self-hosted AI workspace served from owned
-Ubuntu hardware. This repository continues the original proof of concept at
-its existing public URL. The everyday architecture is deliberately simple:
+Ubuntu hardware. The everyday architecture is deliberately simple:
 
 ```text
 Remote browser
@@ -19,10 +18,8 @@ Remote browser
                 and an RTX 3070 8 GiB in the same host
 ```
 
-Both GPUs sit in the one host: the RTX 3070 occupies its PCIEX1_1 slot on a
-riser, so the everyday model spans the two cards without a network hop. There is
-no second machine, and the service starts no llama.cpp RPC process, tunnel, or
-listener. The app and
+Both GPUs sit in Machine A: the RTX 3070 occupies its PCIEX1_1 slot on a riser,
+so the everyday model spans the two cards without a network hop. The app and
 model API are not published directly to the LAN or Internet; SSH is the only
 LAN-facing administration service, and remote web traffic arrives through an
 outbound Cloudflare Tunnel.
@@ -63,12 +60,12 @@ from `unsloth/Qwen3.8-27B-GGUF`, pinned at immutable revision
 13.26 GiB and is layer-split `--tensor-split 64,36` across the two cards.
 
 At the deployed sampling temperature the tuned MTP configuration generates
-roughly 22-27 tokens/second, with a median near 24. As with the 9B, the spread
-follows how predictable the output is rather than how long it is: code drafts
-well at about 26 tokens/second while discursive prose and factual answers sit
-near 23. Speculative draft depth was swept over 1, 2, 3, 4, and 6; depth 2 is the
-peak at 24.3 and depth 6 collapses to 17.6. Prefill runs at about 595
-tokens/second on a short prompt and 500 at 8k.
+roughly 22-27 tokens/second, with a median near 24. The spread follows how
+predictable the output is rather than how long it is: code drafts well at about
+26 tokens/second while discursive prose and factual answers sit near 23.
+Speculative draft depth was swept over 1, 2, 3, 4, and 6; depth 2 is the peak at
+24.3 and depth 6 collapses to 17.6. Prefill runs at about 595 tokens/second on a
+short prompt and 470 at 8k.
 
 Time to first token is about 1.6 s for a short prompt. A cold 8.4k-token prompt
 costs about 18 s, but that is a worst case rather than the usual one: llama.cpp
@@ -83,15 +80,9 @@ fit; `q8_0` halves that. At a full 32k context the peak measured use is 9,234
 MiB of the 3060 and 7,029 MiB of the 3070, leaving roughly 3.0 GiB and 0.8 GiB
 free. Results are local measurements, not a guarantee for other systems.
 
-Preset `9b-q6_k` (`Qwen_Qwen3.5-9B-Q6_K.gguf`, revision
-`182be2fd6c7bc44887d88a91cb03ff009cc9f549`, 7,958,818,848 bytes) remains the
-installer default and the documented fallback. It runs on the 3060 alone at
-roughly 53-69 tokens/second, median near 62, with a 1,350 tokens/second prefill —
-far faster than the 27B, and far less capable.
-
 ## Cold boots and remote availability
 
-Both hosts use full-disk encryption. After power loss or shutdown, someone must
+Machine A uses full-disk encryption. After power loss or shutdown, someone must
 physically power on the machine and enter its LUKS passphrase; Wake-on-LAN and
 SSH cannot bypass that pre-boot step. Once it is unlocked, enabled user services
 can restore inference, the app, and the outbound connector without a graphical
@@ -121,7 +112,6 @@ For private LAN maintenance from the Windows administration laptop:
 
 ```powershell
 ssh kevinbellm-a
-ssh kevinbellm-b
 ```
 
 To open a laptop-local UI tunnel without publishing a LAN port:
@@ -146,29 +136,28 @@ On Machine A, the application lifecycle remains:
 ./scripts/stop.sh
 ```
 
-For an in-place upgrade of the old proof of concept, stop its old Compose
-projects first. To retain its account database, set
-`KEVINBELLM_DATA_VOLUME=asus-kevin-bellm-data` in the private root `.env`.
-Fresh Machine A deployments use the hardware-neutral `kevinbellm-data` volume;
-`setup.sh` refuses the common silent-empty-database migration mistake.
-
 The deployed application uses the local llama.cpp OpenAI-compatible endpoint:
 
 ```dotenv
-INFERENCE_BACKEND=llamacpp
 INFERENCE_BASE_URL=http://127.0.0.1:8080
-DEFAULT_MODEL=kevinbellm-9b
-PREFERRED_MODELS=kevinbellm-9b,kevinbellm-27b
+DEFAULT_MODEL=kevinbellm-27b
+PREFERRED_MODELS=kevinbellm-27b
 ```
 
 The inference address is required to remain on loopback.
 
 ## Assistant behavior
 
-Answers stream from llama.cpp as the model produces them, so first visible text
-arrives in about 0.25 s instead of after the whole generation. The terminating
-message carries the authoritative answer, so the live preview can never diverge
-from the stored reply.
+Answers stream from llama.cpp as the model produces them, so visible text starts
+at the model's time to first token instead of after the whole generation. The
+terminating message carries the authoritative answer, so the live preview can
+never diverge from the stored reply.
+
+The opt-in `Fast` toggle disables live tools for that request and keeps sampling
+on the GPUs. On the deployed host, a fixed-seed 256-token probe improved from
+23.13 to 34.24 tokens/s (48%) with identical output. Leave it off when an answer
+needs current web, news, weather, or model data; tool schemas require a grammar,
+which llama.cpp currently samples on the CPU.
 
 Finished answers render as Markdown in the browser, and retrieved sources appear
 as a separate citation card rather than as URLs appended to the answer text. The
@@ -218,9 +207,8 @@ dependencies with `--require-hashes` and then runs:
 - `bash -n` over every tracked shell script, and a PowerShell parse check over
   the Windows administration scripts;
 - `scripts/check-standalone-contract.sh`, which pins the standalone unit's
-  inference settings and its no-RPC security invariants, so retuning inference
-  fails the build until the expected values are updated deliberately, and which
-  also fails if that unit ever gains a second-host argument or dependency;
+  inference settings, local-only build, and loopback endpoint so retuning
+  inference fails the build until the expected values are updated deliberately;
 - `scripts/check-public-tree.sh`, which fails if a private runtime file, model,
   database, key, host-trust file, or tunnel-token-shaped credential is ever
   tracked.

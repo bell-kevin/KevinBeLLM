@@ -23,8 +23,7 @@ Options:
   --enable-now       Enable and start the installed user unit
 
 Installs Machine A's inference user unit and enables systemd lingering so it
-starts after the encrypted machine has completed boot. There is one host and
-one role: this deployment never starts or connects to llama.cpp RPC.
+starts after the encrypted machine has completed boot.
 USAGE
 }
 
@@ -63,40 +62,9 @@ if [[ "${linger_enabled}" != 'yes' ]]; then
   cluster_require_command sudo
 fi
 
-# Fail closed. Stop and disable the inference unit before reading any
-# env/model/build input, and disable any RPC unit left behind by an older
-# two-node install whose Requires= dependency could otherwise resurrect a
-# tunnel at the next boot. A successful install re-enables the safe server.
 if systemctl --user is-active --quiet kevinbellm-llama.service; then
   restart_active=1
 fi
-shutdown_failed=0
-for unsafe_unit in \
-  kevinbellm-llama.service \
-  kevinbellm-rpc-tunnel.service \
-  kevinbellm-rpc-worker.service; do
-  if systemctl --user cat "${unsafe_unit}" >/dev/null 2>&1; then
-    systemctl --user disable --now "${unsafe_unit}" || shutdown_failed=1
-  fi
-done
-((shutdown_failed == 0)) || \
-  cluster_die "Could not disable every prior inference/RPC unit; inspect systemctl --user status."
-
-# Named units are not the only way an RPC parser or SSH forward can exist.
-# Refuse the install if an unknown process still owns either legacy RPC port;
-# report only its bound endpoint and leave process ownership to the operator
-# instead of killing an unrelated process.
-cluster_require_command ss
-listener_found=0
-for rpc_port in 50052 50053; do
-  rpc_listeners="$(ss -H -ltn "sport = :${rpc_port}" | awk '{ print $4 }')"
-  if [[ -n "${rpc_listeners}" ]]; then
-    cluster_warn "RPC listener remains on TCP/${rpc_port}: ${rpc_listeners//$'\n'/, }"
-    listener_found=1
-  fi
-done
-((listener_found == 0)) || \
-  cluster_die "Refusing to install while an RPC port remains open. Stop the owning process and rerun."
 
 config_dir="${HOME}/.config/kevinbellm-cluster"
 unit_dir="${HOME}/.config/systemd/user"
@@ -118,6 +86,8 @@ chmod 600 "${env_file}"
 llama_dir="$(realpath -e "${llama_dir}")"
 server_bin="${llama_dir}/build/bin/llama-server"
 [[ -x "${server_bin}" ]] || cluster_die "Pinned build is missing llama-server; run install-llama-cpp.sh."
+[[ ! -e "${llama_dir}/build/bin/ggml-rpc-server" ]] || \
+  cluster_die "Pinned build still contains ggml-rpc-server; rebuild from a fresh directory with RPC disabled."
 build_spec_file="${llama_dir}/KEVINBELLM_BUILD_SPEC.txt"
 [[ -f "${build_spec_file}" ]] || cluster_die "Pinned build-spec file is missing: ${build_spec_file}"
 for required_build_spec in \
@@ -125,6 +95,7 @@ for required_build_spec in \
   'CMAKE_CUDA_ARCHITECTURES=86' \
   'GGML_CUDA=ON' \
   'GGML_NATIVE=OFF' \
+  'GGML_RPC=OFF' \
   'LLAMA_BUILD_UI=OFF' \
   'LLAMA_USE_PREBUILT_UI=OFF'; do
   grep -qxF "${required_build_spec}" "${build_spec_file}" || \
@@ -148,14 +119,13 @@ model_preset="$(cluster_env_value "${env_file}" MODEL_PRESET || true)"
 model_preset="${model_preset:-27b-iq4_xs}"
 model_path="$(cluster_env_value "${env_file}" MODEL_PATH || true)"
 model_alias="$(cluster_env_value "${env_file}" LLAMA_MODEL_ALIAS || true)"
-# Machine A runs either the 27B layer-split over both of its GPUs or the
-# smaller, much faster 9B on the RTX 3060 alone.
-[[ "${model_preset}" == '27b-iq4_xs' || "${model_preset}" == '9b-q6_k' ]] || \
-  cluster_die "MODEL_PRESET must be 27b-iq4_xs or 9b-q6_k in ${env_file}."
+# Machine A runs the verified 27B artifact layer-split over both GPUs.
+[[ "${model_preset}" == '27b-iq4_xs' ]] || \
+  cluster_die "MODEL_PRESET must be 27b-iq4_xs in ${env_file}."
 [[ "${model_path}" == /* ]] || cluster_die "MODEL_PATH must be an absolute path in ${env_file}."
 [[ "${model_path}" != *CHANGE_ME* ]] || cluster_die "Replace the MODEL_PATH placeholder in ${env_file}."
-[[ "${model_alias}" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ ]] || \
-  cluster_die "Set a safe LLAMA_MODEL_ALIAS in ${env_file}."
+[[ "${model_alias}" == 'kevinbellm-27b' ]] || \
+  cluster_die "LLAMA_MODEL_ALIAS must be kevinbellm-27b in ${env_file}."
 if [[ -f "${model_path}" ]]; then
   "${script_dir}/download-model.sh" --preset "${model_preset}" --output "${model_path}" --verify-only
 else
@@ -177,4 +147,3 @@ if ((enable_now || restart_active)); then
 fi
 
 cluster_info "Installed units: ${units[*]}"
-cluster_info "This deployment has no RPC dependency, argument, service, or listener."

@@ -17,7 +17,7 @@ def _settings(tmp_path) -> Settings:
         public_origin="http://localhost:3000",
         secure_cookie=False,
         source_url="https://example.org/source",
-        ollama_url="http://127.0.0.1:8080",
+        inference_base_url="http://127.0.0.1:8080",
         searxng_url="http://127.0.0.1:8888",
         live_tools_url="http://127.0.0.1:8090",
         default_model="test-model",
@@ -31,9 +31,6 @@ def _settings(tmp_path) -> Settings:
         chat_deadline_seconds=60,
         fetch_deadline_seconds=5,
         database_concurrency=2,
-        ollama_context_length=4_096,
-        inference_backend="llamacpp",
-        inference_base_url="http://127.0.0.1:8080",
     )
 
 
