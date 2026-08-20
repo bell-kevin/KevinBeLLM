@@ -227,14 +227,16 @@ elif [[ "${role}" == 'standalone' ]]; then
   model_preset="${model_preset:-9b-q6_k}"
   model_path="$(cluster_env_value "${env_file}" MODEL_PATH || true)"
   model_alias="$(cluster_env_value "${env_file}" LLAMA_MODEL_ALIAS || true)"
-  [[ "${model_preset}" == '9b-q6_k' ]] || cluster_die "Standalone mode requires MODEL_PRESET=9b-q6_k in ${env_file}."
+  # Machine A runs either the 9B on the 3060 alone or the 27B layer-split over
+  # both of its GPUs; the two-node 27b-q4_k_m artifact stays coordinator-only.
+  [[ "${model_preset}" == '9b-q6_k' || "${model_preset}" == '27b-iq4_xs' ]]     || cluster_die "Standalone mode requires MODEL_PRESET=9b-q6_k or 27b-iq4_xs in ${env_file}."
   [[ "${model_path}" == /* ]] || cluster_die "MODEL_PATH must be an absolute path in ${env_file}."
   [[ "${model_path}" != *CHANGE_ME* ]] || cluster_die "Replace the MODEL_PATH placeholder in ${env_file}."
   [[ "${model_alias}" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ ]] || cluster_die "Set a safe LLAMA_MODEL_ALIAS in ${env_file}."
   if [[ -f "${model_path}" ]]; then
     "${script_dir}/download-model.sh" --preset "${model_preset}" --output "${model_path}" --verify-only
   else
-    cluster_die "Standalone model file not found: ${model_path}. Run download-model.sh --preset 9b-q6_k first."
+    cluster_die "Standalone model file not found: ${model_path}. Run download-model.sh --preset ${model_preset} first."
   fi
   render_unit "${project_dir}/systemd/cluster/llama-server.service.in" \
     "${unit_dir}/kevinbellm-llama.service"

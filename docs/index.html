@@ -52,8 +52,8 @@
           <h1 id="hero-title">Private AI.<br><em>Protected remote access.</em></h1>
           <p class="hero-summary">
             KevinBeLLM is an open-source AI workspace served from encrypted Ubuntu
-            hardware. Its everyday model runs fully on an RTX 3060, and authorized
-            users can connect without opening a router port.
+            hardware. Its everyday model runs fully on two consumer GPUs in one host,
+            and authorized users can connect without opening a router port.
           </p>
           <div class="hero-actions">
             <a
@@ -83,7 +83,7 @@
             <div class="model-row">
               <div>
                 <span class="field-label">Pinned model</span>
-                <strong>Qwen3.5-9B Q6_K</strong>
+                <strong>Qwen3.8-27B IQ4_XS</strong>
               </div>
               <span class="selector" aria-hidden="true">Format <b>GGUF</b></span>
             </div>
@@ -91,10 +91,10 @@
               <div class="avatar" aria-hidden="true">K</div>
               <div class="message">
                 <p class="message-label">Fast standalone inference</p>
-                <p>Machine A keeps the everyday model fully on its GPU; Machine B is not required for normal service.</p>
+                <p>Machine A keeps the everyday model fully resident across both of its GPUs; no second machine is required for normal service.</p>
                 <div class="tool-pills" aria-label="Deployment components">
-                  <span>RTX 3060 · 12 GiB</span>
-                  <span>≈62 tokens/s measured</span>
+                  <span>RTX 3060 + RTX 3070 · 20 GiB</span>
+                  <span>≈26 tokens/s measured</span>
                   <span>llama.cpp</span>
                 </div>
               </div>
@@ -117,7 +117,7 @@
           <article>
             <span class="feature-number">01</span>
             <h3>Local GPU inference</h3>
-            <p>A checksum-pinned 9B quantized model stays on the RTX 3060 instead of relying on a hosted model API.</p>
+            <p>A checksum-pinned 27B quantized model stays split across the two GPUs instead of relying on a hosted model API.</p>
           </article>
           <article>
             <span class="feature-number">02</span>
@@ -140,34 +140,34 @@
       <section class="hardware section" id="hardware" aria-labelledby="hardware-title">
         <div class="section-heading compact">
           <p class="kicker">Owned compute</p>
-          <h2 id="hardware-title">One primary host. One optional GPU.</h2>
-          <p>The responsive default needs only Machine A; Machine B remains available for deliberate experiments.</p>
+          <h2 id="hardware-title">One primary host. Two pooled GPUs.</h2>
+          <p>Both cards now live in Machine A and share one model; Machine B remains optional and carries no inference dependency.</p>
         </div>
 
         <div class="host-grid">
           <article class="host-card">
             <p class="host-label">Machine A · primary</p>
-            <h3>GeForce RTX 3060</h3>
+            <h3>RTX 3060 + RTX 3070</h3>
             <dl>
-              <div><dt>VRAM</dt><dd>12 GiB GDDR6</dd></div>
-              <div><dt>Role</dt><dd>App and fully resident 9B model</dd></div>
+              <div><dt>VRAM</dt><dd>12 GiB + 8 GiB GDDR6</dd></div>
+              <div><dt>Role</dt><dd>App and fully resident 27B model, layer-split across both cards</dd></div>
               <div><dt>Network</dt><dd>Outbound tunnel; loopback origins</dd></div>
             </dl>
           </article>
           <article class="host-card">
             <p class="host-label">Machine B · optional</p>
-            <h3>GeForce RTX 3070</h3>
+            <h3>Document retrieval</h3>
             <dl>
-              <div><dt>VRAM</dt><dd>8 GiB GDDR6</dd></div>
-              <div><dt>Role</dt><dd>Maintenance and capacity tests</dd></div>
+              <div><dt>Role</dt><dd>Private document index for the search tool</dd></div>
               <div><dt>Default state</dt><dd>No inference dependency</dd></div>
+              <div><dt>Availability</dt><dd>Started deliberately; absent by default</dd></div>
             </dl>
           </article>
         </div>
 
         <p class="pool-note">
-          <strong>Speed and capacity are different goals.</strong>
-          The fully GPU-resident 9B default is far faster than spilling the retained 27B model into system RAM.
+          <strong>Capacity bought with speed.</strong>
+          Pooling both cards keeps a 27B model entirely in VRAM. That is far slower than the 9B it replaced, and still far faster than spilling any of it into system RAM.
         </p>
 
         <div class="boot-note">
@@ -204,7 +204,7 @@
           </li>
           <li>
             <span class="flow-icon" aria-hidden="true">05</span>
-            <div><strong>Local llama.cpp</strong><small>RTX 3060 · Qwen3.5-9B</small></div>
+            <div><strong>Local llama.cpp</strong><small>RTX 3060 + 3070 · Qwen3.8-27B</small></div>
           </li>
         </ol>
         <p class="flow-caption">

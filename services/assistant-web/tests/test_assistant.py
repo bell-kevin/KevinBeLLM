@@ -8,7 +8,14 @@ from dataclasses import replace
 import httpx
 import pytest
 
-from app.assistant import MAX_TOOL_CALLS, installed_models, run_chat
+from app.assistant import (
+    FINAL_ANSWER_INSTRUCTION,
+    MAX_TOOL_CALLS,
+    _final_answer_turns,
+    _strip_tool_syntax,
+    installed_models,
+    run_chat,
+)
 from app.config import Settings
 from app.tools import ToolExecution
 
@@ -446,3 +453,88 @@ def test_reasoning_is_opt_in_and_never_enters_the_answer(tmp_path) -> None:
     assert thoughts == ["weighing ", "options"]
     # The stored answer must contain no chain-of-thought.
     assert "weighing" not in content
+
+
+def test_leaked_tool_markup_never_reaches_the_answer() -> None:
+    # Qwen3.8-27B emits this once the bounded loop withdraws the tool schema:
+    # llama.cpp has nothing to parse it with, so it arrives as ordinary content.
+    leaked = (
+        "Here is what I found.\n"
+        "<tool_call>\n"
+        "<function=news_search>\n"
+        "<parameter=query>\nmarkets today\n</parameter>\n"
+        "</function>\n"
+        "</tool_call>\n"
+    )
+    assert _strip_tool_syntax(leaked) == "Here is what I found."
+
+
+def test_tool_call_cut_off_by_the_token_budget_is_dropped() -> None:
+    cut_off = "Partial answer.\n<tool_call>\n<function=news_search>\n<parameter=query>"
+    assert _strip_tool_syntax(cut_off) == "Partial answer."
+
+
+def test_prose_mentioning_tool_syntax_inline_is_not_truncated() -> None:
+    prose = "The model emits a <tool_call> marker inline when it wants a tool."
+    assert _strip_tool_syntax(prose) == prose
+
+
+def test_final_answer_turns_do_not_mutate_the_conversation() -> None:
+    conversation = [{"role": "user", "content": "hi"}]
+    turns = _final_answer_turns(conversation)
+    assert conversation == [{"role": "user", "content": "hi"}]
+    assert turns[-1] == {"role": "user", "content": FINAL_ANSWER_INSTRUCTION}
+    # A trailing *system* turn makes Qwen's chat template reject the request.
+    assert turns[-1]["role"] == "user"
+
+
+def test_withdrawn_tools_ask_for_a_final_answer_and_strip_any_leak(
+    monkeypatch, tmp_path
+) -> None:
+    settings = _settings(tmp_path)
+    model_requests: list[list[dict]] = []
+    include_tools_seen: list[bool] = []
+
+    async def fake_chat_once(
+        _client, _settings, _model, messages, *, include_tools,
+        on_delta=None, on_reasoning=None, reasoning=False,
+    ):
+        model_requests.append([dict(message) for message in messages])
+        include_tools_seen.append(include_tools)
+        if include_tools:
+            return {
+                "content": "",
+                "tool_calls": [
+                    {"function": {"name": "web_search", "arguments": {"query": "x"}}}
+                    for _ in range(MAX_TOOL_CALLS)
+                ],
+            }
+        # The model ignores the instruction and tries to call a tool anyway.
+        return {
+            "content": (
+                "Real answer.\n"
+                "<tool_call>\n<function=web_search>\n"
+                "<parameter=query>\nmore\n</parameter>\n</function>\n</tool_call>"
+            )
+        }
+
+    async def fake_tool_run(_self, _name, _arguments):
+        return ToolExecution("{}")
+
+    monkeypatch.setattr("app.assistant._chat_once", fake_chat_once)
+    monkeypatch.setattr("app.assistant.ToolRunner.run", fake_tool_run)
+
+    async def run():
+        async with httpx.AsyncClient() as client:
+            return await run_chat(
+                client,
+                settings,
+                "test-model",
+                [{"role": "user", "content": "what changed in the news today?"}],
+                lambda _event, _payload: asyncio.sleep(0),
+            )
+
+    content, _sources = asyncio.run(run())
+    assert content == "Real answer."
+    assert include_tools_seen[-1] is False
+    assert model_requests[-1][-1]["content"] == FINAL_ANSWER_INSTRUCTION

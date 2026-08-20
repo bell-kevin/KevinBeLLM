@@ -15,12 +15,14 @@ Remote browser
   -> Cloudflare Access
   -> outbound-only Cloudflare Tunnel
   -> Machine A: KevinBeLLM login + app + standalone llama-server
-                Qwen3.5-9B Q6_K fully on the RTX 3060 12 GiB
+                Qwen3.8-27B IQ4_XS layer-split over an RTX 3060 12 GiB
+                and an RTX 3070 8 GiB in the same host
 ```
 
-Machine B's RTX 3070 remains available for maintenance, experiments, the
-optional document-retrieval profile, or the explicitly optional 27B two-node
-profile. Normal service does not depend on
+Both GPUs now sit in Machine A: the RTX 3070 was moved into its PCIEX1_1 slot on
+a riser, so the everyday model spans the two cards in one host. Machine B remains
+available for the optional document-retrieval profile and for deliberate
+experiments. Normal service does not depend on
 Machine B and starts no llama.cpp RPC process, tunnel, or listener. The app and
 model API are not published directly to the LAN or Internet; SSH is the only
 LAN-facing administration service, and remote web traffic arrives through an
@@ -34,37 +36,61 @@ through KevinBeLLM's own login.
 
 ## Hardware and model
 
-| Role | GPU | Nominal VRAM | Workload |
-| --- | --- | ---: | --- |
-| Machine A, primary | NVIDIA GeForce RTX 3060 | 12 GiB | App and fully GPU-resident everyday model |
-| Machine B, optional | NVIDIA GeForce RTX 3070 | 8 GiB | Maintenance, optional document retrieval, and deliberate two-node experiments |
+| Role | GPU | Nominal VRAM | Link | Workload |
+| --- | --- | ---: | --- | --- |
+| Machine A, primary | NVIDIA GeForce RTX 3060 | 12 GiB | PCIe 2.0 x16 | App, and layers 0-n of the everyday model |
+| Machine A, secondary | NVIDIA GeForce RTX 3070 | 8 GiB | PCIe 2.0 x1 riser | Remaining layers of the same model |
+| Machine B, optional | none required | - | - | Optional document retrieval |
 
-Both GPUs are Ampere devices with CUDA compute capability 8.6, so they use the
-same pinned llama.cpp source revision and CUDA build configuration. Their 20
-GiB of nominal VRAM remains two
-separate memory pools: bandwidth does not add together, and CUDA contexts,
-compute buffers, KV cache, and display use consume part of each card.
+Both GPUs are Ampere devices with CUDA compute capability 8.6, so they share the
+same pinned llama.cpp source revision and CUDA build configuration. Their 20 GiB
+of nominal VRAM (19,753 MiB as llama.cpp counts it) remains two separate memory
+pools: capacity adds, bandwidth does not, and CUDA contexts, compute buffers, KV
+cache, and display use consume part of each card.
 
-The default model installer pins `Qwen_Qwen3.5-9B-Q6_K.gguf` at immutable
-revision `182be2fd6c7bc44887d88a91cb03ff009cc9f549`, verifies its exact
-7,958,818,848-byte size and SHA-256, and refuses mismatched files. On Machine A,
-the tuned MTP configuration generates roughly 53-69 tokens/second at the
-deployed sampling temperature, with a median near 62. What sets that spread is
-how predictable the output is, not how long it is: code and arithmetic draft
-well and reach 68-69 tokens/second, while discursive technical prose and
-creative writing fall to 53-57. Longer answers are not slower, and longer
-prompts are nearly free out to about 7,500 tokens. The configuration retains
-about 3.2 GiB of free
-VRAM at a 32,768-token context, and passes a coherent OpenAI-compatible
-tool-call check. Time to first token is about 0.3 s for a short prompt and
-scales with prompt length at a prefill rate of roughly 1,350 tokens/second.
-Results are local measurements, not a guarantee for other systems.
+The x1 riser costs far less than it looks like it should. Layer splitting moves
+only one hidden-state vector per boundary, so against the 3070 alone the split
+loses about 11% of prefill and 7% of decode. Prefill is the part that is
+link-sensitive: raising `--ubatch-size` from 512 to 1024 sends twice as much
+across the x1 link per crossing and makes prefill *worse* (494 to 458
+tokens/second), and 2048 exhausts VRAM outright. 512 is the tuned value.
 
-The optional pinned 27B Q4_K_M artifact is retained for comparison. It needs
-CPU offload on A alone and measured only about 1.42 tokens/second with the
-conservative build, so it is not the interactive default. The existing
-two-machine profile can distribute it across both GPUs only after the operator
-accepts the separate RPC security warning.
+`CUDA_DEVICE_ORDER=PCI_BUS_ID` is set on the service because CUDA otherwise
+orders devices fastest-first, which silently makes `CUDA0` the smaller 3070.
+
+Machine A's deployed model is preset `27b-iq4_xs`: `Qwen3.8-27B-UD-IQ4_XS.gguf`
+from `unsloth/Qwen3.8-27B-GGUF`, pinned at immutable revision
+`4ca720788d1e01f1bff70c033e0d0028fd02e502`, verified against its exact
+14,252,845,984-byte size and SHA-256, with mismatched files refused. It occupies
+13.26 GiB and is layer-split `--tensor-split 64,36` across the two cards.
+
+At the deployed sampling temperature the tuned MTP configuration generates
+roughly 22-27 tokens/second, with a median near 24. As with the 9B, the spread
+follows how predictable the output is rather than how long it is: code drafts
+well at about 26 tokens/second while discursive prose and factual answers sit
+near 23. Speculative draft depth was swept over 1, 2, 3, 4, and 6; depth 2 is the
+peak at 24.3 and depth 6 collapses to 17.6. Prefill runs at about 595
+tokens/second on a short prompt and 500 at 8k.
+
+Time to first token is about 1.6 s for a short prompt. A cold 8.4k-token prompt
+costs about 18 s, but that is a worst case rather than the usual one: llama.cpp
+reuses the cached prefix, so the next turn of the same conversation starts in
+about 3.8 s and an unchanged prompt in about 1.6 s. The system prompt therefore
+stamps only the UTC *date*; a per-request timestamp there would invalidate the
+whole prefix on every turn and silently reintroduce the cold cost.
+
+The KV cache is `q8_0` rather than `f16`. This model spends 0.25 MiB per token of
+KV, so 32,768 tokens of `f16` would need 8 GiB on top of the weights and does not
+fit; `q8_0` halves that. At a full 32k context the peak measured use is 9,234
+MiB of the 3060 and 7,029 MiB of the 3070, leaving roughly 3.0 GiB and 0.8 GiB
+free. Results are local measurements, not a guarantee for other systems.
+
+Preset `9b-q6_k` (`Qwen_Qwen3.5-9B-Q6_K.gguf`, revision
+`182be2fd6c7bc44887d88a91cb03ff009cc9f549`, 7,958,818,848 bytes) remains the
+installer default and the documented fallback. It runs on the 3060 alone at
+roughly 53-69 tokens/second, median near 62, with a 1,350 tokens/second prefill —
+far faster than the 27B, and far less capable. Preset `27b-q4_k_m` is a different
+artifact retained only for the optional two-node RPC profile.
 
 ## Cold boots and remote availability
 
@@ -94,7 +120,7 @@ standalone installation. It covers:
 
 The same guide covers the optional [Machine B document-retrieval
 profile](infra/cluster/README.md#optional-machine-b-document-retrieval), which
-gives the RTX 3070 a job of its own rather than a share of Machine A's job.
+keeps retrieval off Machine A rather than competing with inference for its VRAM.
 
 The much longer [two-node setup guide](docs/TWO_NODE_SETUP.md) is retained for
 the optional 27B RPC experiment; it is not required for normal operation.
@@ -187,7 +213,7 @@ modes fit the 32,768-token context.
 
 ## Optional private document search
 
-Machine B's RTX 3070 can host a `search_documents` tool over an index of your
+Machine B can host a `search_documents` tool over an index of your
 own files: bge-m3 embeddings, dense search, and bge-reranker-v2-m3 reranking all
 run there, and Machine A issues one HTTP request per tool call over a loopback
 SSH forward. It uses no llama.cpp RPC.
@@ -219,7 +245,7 @@ public `http(s)` links. Setup lives in
   filesystem, model-download, email, or account tools.
 - `services/doc-retrieval/` — optional Machine B service: dense retrieval over
   your own documents, with bge-m3 embeddings and bge-reranker-v2-m3 reranking on
-  the RTX 3070. Machine A never installs or runs it.
+  Machine B. Machine A never installs or runs it.
 - `scripts/` — Machine A lifecycle helpers: setup, start, status, doctor, stop,
   autostart installation, and container-engine selection.
 - `scripts/cluster/` — Ubuntu preparation, SSH hardening, pinned builds, model
