@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -17,8 +18,29 @@ from .tools import ToolError, ToolRunner, tool_definitions
 
 
 MAX_OLLAMA_RESPONSE_BYTES = 4 * 1024 * 1024
-MAX_TOOL_CALLS = 6
-MAX_TOOL_ROUNDS = 6
+
+def _bounded_env_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    """Read a bounded integer knob, falling back to the measured default."""
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        raise RuntimeError(f"{name} must be an integer") from None
+    if not minimum <= value <= maximum:
+        raise RuntimeError(f"{name} must be between {minimum} and {maximum}")
+    return value
+
+
+# Measured against the deployed model with stub tool results: it issues two calls
+# per round and wants 6, 10, and 11 calls over 4-6 rounds for three representative
+# research questions, stopping on its own each time. The previous cap of 6 calls
+# therefore truncated two of those three before the model was finished. 12 covers
+# everything observed with headroom; the extra rounds cost roughly 6-10 s each,
+# which only questions that actually call tools ever pay.
+MAX_TOOL_CALLS = _bounded_env_int("MAX_TOOL_CALLS", 12, 1, 24)
+MAX_TOOL_ROUNDS = _bounded_env_int("MAX_TOOL_ROUNDS", 8, 1, 16)
 MAX_ASSISTANT_CHARS = 50_000
 
 # Once the bounded loop withdraws the tools, a tool-eager model still tries to call
