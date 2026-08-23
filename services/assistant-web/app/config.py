@@ -97,6 +97,16 @@ class Settings:
     chat_deadline_seconds: int
     fetch_deadline_seconds: int
     database_concurrency: int
+    zoo_api_base_url: str = ""
+    api_token_ttl_seconds: int = 30 * 24 * 3600
+    zoo_max_output_tokens: int = 8_192
+    zoo_context_window: int = 32_768
+
+    def __post_init__(self) -> None:
+        if self.zoo_max_output_tokens >= self.zoo_context_window:
+            raise RuntimeError(
+                "ZOO_MAX_OUTPUT_TOKENS must be smaller than ZOO_CONTEXT_WINDOW"
+            )
 
 
 def load_settings() -> Settings:
@@ -107,6 +117,27 @@ def load_settings() -> Settings:
     default_model = os.getenv("DEFAULT_MODEL", "kevinbellm-27b").strip()
     if not default_model or len(default_model) > 200:
         raise RuntimeError("DEFAULT_MODEL must be between 1 and 200 characters")
+    default_zoo_api_base_url = f"{public_url.rstrip('/')}/v1"
+    if parsed_public.hostname in {"localhost", "127.0.0.1", "::1"}:
+        try:
+            public_port = parsed_public.port
+        except ValueError as exc:
+            raise RuntimeError("PUBLIC_URL contains an invalid port") from exc
+        port_suffix = f":{public_port}" if public_port is not None else ""
+        public_path = parsed_public.path.rstrip("/")
+        default_zoo_api_base_url = (
+            f"{parsed_public.scheme}://127.0.0.1{port_suffix}{public_path}/v1"
+        )
+    zoo_api_base_url = _http_url("ZOO_API_BASE_URL", default_zoo_api_base_url)
+    parsed_zoo = urlsplit(zoo_api_base_url)
+    if not parsed_zoo.path.rstrip("/").endswith("/v1"):
+        raise RuntimeError("ZOO_API_BASE_URL must end in /v1")
+    if parsed_zoo.scheme != "https" and parsed_zoo.hostname not in {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }:
+        raise RuntimeError("ZOO_API_BASE_URL must use HTTPS unless it is loopback")
     return Settings(
         data_dir=Path(os.getenv("DATA_DIR", "/data")).expanduser().resolve(),
         public_url=public_url,
@@ -133,6 +164,16 @@ def load_settings() -> Settings:
         chat_deadline_seconds=_bounded_int("CHAT_DEADLINE_SECONDS", 1_200, 60, 3_600),
         fetch_deadline_seconds=_bounded_int("FETCH_DEADLINE_SECONDS", 30, 5, 120),
         database_concurrency=_bounded_int("DATABASE_CONCURRENCY", 8, 1, 32),
+        zoo_api_base_url=zoo_api_base_url,
+        api_token_ttl_seconds=(
+            _bounded_int("ZOO_TOKEN_TTL_DAYS", 30, 1, 365) * 24 * 3600
+        ),
+        zoo_max_output_tokens=_bounded_int(
+            "ZOO_MAX_OUTPUT_TOKENS", 8_192, 256, 16_384
+        ),
+        zoo_context_window=_bounded_int(
+            "ZOO_CONTEXT_WINDOW", 32_768, 4_096, 262_144
+        ),
     )
 
 

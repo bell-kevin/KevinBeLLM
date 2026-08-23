@@ -1,0 +1,236 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#071310">
+    <meta name="referrer" content="no-referrer">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; font-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
+    >
+    <meta
+      name="description"
+      content="Create and revoke private Zoo Code credentials for KevinBeLLM."
+    >
+    <title>Zoo Code access · KevinBeLLM</title>
+    <link rel="icon" href="mark.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+    <script src="zoo-code.js" defer></script>
+  </head>
+  <body class="zoo-body">
+    <a class="skip-link" href="#zooMain">Skip to Zoo Code setup</a>
+
+    <div class="startup-screen" id="startupScreen" role="status" aria-live="polite">
+      <img src="mark.svg" width="52" height="52" alt="">
+      <span class="startup-spinner" aria-hidden="true"></span>
+      <p>Checking your private session…</p>
+    </div>
+
+    <div class="zoo-shell" id="zooShell" hidden>
+      <header class="zoo-header">
+        <a class="brand" href="./" aria-label="Return to KevinBeLLM workspace">
+          <img src="mark.svg" width="38" height="38" alt="">
+          <span>KevinBeLLM</span>
+        </a>
+        <nav class="zoo-header-nav" aria-label="Account and workspace">
+          <span class="zoo-signed-in" id="signedInAs"></span>
+          <a class="secondary-button" href="./">Back to workspace</a>
+        </nav>
+      </header>
+
+      <main class="zoo-main" id="zooMain" tabindex="-1">
+        <section class="zoo-hero" aria-labelledby="zooTitle">
+          <div>
+            <p class="eyebrow"><span aria-hidden="true"></span> Authenticated external access</p>
+            <h1 id="zooTitle">Use KevinBeLLM<br><em>inside VS Code.</em></h1>
+            <p>
+              Create a separate, expiring API credential to use in Zoo Code. Your browser session and
+              account password stay out of the extension, and you can revoke access here at any time.
+            </p>
+          </div>
+          <a
+            class="primary-button zoo-marketplace-button"
+            href="https://marketplace.visualstudio.com/items?itemName=ZooCodeOrganization.zoo-code"
+            target="_blank"
+            rel="external noopener noreferrer"
+          >
+            Get Zoo Code from VS Marketplace <span aria-hidden="true">↗</span>
+          </a>
+        </section>
+
+        <section class="zoo-https-warning" id="httpsWarning" aria-labelledby="httpsWarningTitle">
+          <span class="zoo-warning-mark" aria-hidden="true">!</span>
+          <div>
+            <h2 id="httpsWarningTitle">Remote access requires trusted HTTPS</h2>
+            <p id="httpsWarningText">
+              When VS Code is on another computer, never send this credential over plain HTTP.
+              Publish KevinBeLLM behind a trusted HTTPS endpoint first.
+            </p>
+          </div>
+        </section>
+
+        <div class="zoo-content-grid">
+          <section class="zoo-card zoo-setup-card" aria-labelledby="setupTitle">
+            <div class="zoo-card-heading">
+              <div>
+                <p class="kicker">Extension configuration</p>
+                <h2 id="setupTitle">Connect Zoo Code</h2>
+              </div>
+              <a
+                href="https://docs.zoocode.dev/providers/openai-compatible"
+                target="_blank"
+                rel="external noopener noreferrer"
+              >Official setup docs <span aria-hidden="true">↗</span></a>
+            </div>
+
+            <ol class="zoo-steps">
+              <li>Install Zoo Code, then open its panel from the VS Code Activity Bar.</li>
+              <li>Open Zoo Code settings and set <strong>API Provider</strong> to <strong>OpenAI Compatible</strong>.</li>
+              <li>Paste the Base URL and a newly created credential into <strong>API Key</strong>.</li>
+              <li>In the <strong>Model</strong> picker, explicitly select the model shown below. If it is not listed, search for the exact ID and choose <strong>Use custom</strong>; do not leave <code>gpt-4o</code> selected.</li>
+              <li>Set Context Window Size and Max Output Tokens. Actively turn <strong>Image Support</strong> off because Zoo enables it by default; keep Prompt Caching and <strong>Enable Reasoning Effort</strong> off.</li>
+              <li>Turn <strong>Enable streaming</strong> and <strong>Include max output tokens</strong> on.</li>
+            </ol>
+
+            <dl class="zoo-settings" aria-label="Zoo Code provider settings">
+              <div class="zoo-setting-row">
+                <dt>API Provider</dt>
+                <dd><code id="providerValue">OpenAI Compatible</code></dd>
+                <button class="zoo-copy-button" type="button" data-copy-target="providerValue" aria-label="Copy Provider value">Copy</button>
+              </div>
+              <div class="zoo-setting-row">
+                <dt>Base URL</dt>
+                <dd><code id="baseUrlValue">Loading…</code></dd>
+                <button class="zoo-copy-button" type="button" data-copy-target="baseUrlValue" aria-label="Copy Base URL" disabled>Copy</button>
+              </div>
+              <div class="zoo-setting-row">
+                <dt>API Key</dt>
+                <dd><span>Paste the shown-once API credential created below</span></dd>
+              </div>
+              <div class="zoo-setting-row">
+                <dt>Model</dt>
+                <dd><code id="modelValue">Loading…</code></dd>
+                <button class="zoo-copy-button" type="button" data-copy-target="modelValue" aria-label="Copy Model value" disabled>Copy</button>
+              </div>
+              <div class="zoo-setting-row">
+                <dt>Context Window Size</dt>
+                <dd><code id="contextWindowValue">Loading…</code></dd>
+                <button class="zoo-copy-button" type="button" data-copy-target="contextWindowValue" aria-label="Copy Context Window Size" disabled>Copy</button>
+              </div>
+              <div class="zoo-setting-row">
+                <dt>Max Output Tokens</dt>
+                <dd><code id="maxOutputValue">Loading…</code></dd>
+                <button class="zoo-copy-button" type="button" data-copy-target="maxOutputValue" aria-label="Copy Max Output Tokens" disabled>Copy</button>
+              </div>
+            </dl>
+            <p class="zoo-copy-status" id="copyStatus" role="status" aria-live="polite"></p>
+
+            <div class="zoo-provider-note">
+              Zoo Code requires OpenAI-compatible native tool calling. Explicitly select the exact
+              model ID shown above; model availability is controlled by this KevinBeLLM host. Put the credential
+              only in the API Key field. Zoo Code uses VS Code Secret Storage, but exported Zoo
+              settings can contain credentials, so never share an export that includes this key.
+            </div>
+          </section>
+
+          <div class="zoo-credential-column">
+            <section class="zoo-card" aria-labelledby="createTitle">
+              <div class="zoo-card-heading">
+                <div>
+                  <p class="kicker">New credential</p>
+                  <h2 id="createTitle">Create an API credential</h2>
+                </div>
+              </div>
+              <p class="zoo-card-copy">
+                Name the installation so you can identify it later. Confirm your current password
+                before KevinBeLLM creates the credential.
+              </p>
+
+              <form class="zoo-form" id="credentialForm">
+                <div class="field-group">
+                  <label for="credentialName">Credential name</label>
+                  <input
+                    id="credentialName"
+                    name="name"
+                    type="text"
+                    autocomplete="off"
+                    maxlength="80"
+                    placeholder="Zoo Code on my laptop"
+                    required
+                  >
+                </div>
+                <div class="field-group">
+                  <label for="currentPassword">Current account password</label>
+                  <input
+                    id="currentPassword"
+                    name="current_password"
+                    type="password"
+                    autocomplete="current-password"
+                    maxlength="1024"
+                    required
+                  >
+                  <small class="field-hint">Required each time; your password is never shown to Zoo Code.</small>
+                </div>
+                <p class="form-message" id="createMessage" role="alert" aria-live="assertive" hidden></p>
+                <button class="primary-button zoo-create-button" id="createButton" type="submit">
+                  <span class="button-label">Create credential</span>
+                  <span class="button-spinner" aria-hidden="true"></span>
+                </button>
+                <p class="zoo-expiry-hint" id="expiryHint"></p>
+              </form>
+            </section>
+
+            <section class="zoo-once-card" id="oneTimeCard" aria-labelledby="oneTimeTitle" hidden>
+              <div class="zoo-once-heading">
+                <div>
+                  <p class="kicker">Available only now</p>
+                  <h2 id="oneTimeTitle">Copy your API key</h2>
+                </div>
+                <button class="zoo-dismiss-button" id="dismissToken" type="button">Dismiss and clear</button>
+              </div>
+              <p>
+                Paste this into Zoo Code’s <strong>API Key</strong> field now. KevinBeLLM will not
+                display it again. If it is lost, revoke it and create another.
+              </p>
+              <div class="zoo-secret-row">
+                <code id="oneTimeToken" tabindex="0" aria-label="New Zoo Code API key"></code>
+                <button class="primary-button" id="copyToken" type="button" aria-describedby="oneTimeHelp">Copy API key</button>
+              </div>
+              <p class="zoo-once-help" id="oneTimeHelp" role="status" aria-live="polite">
+                Keep this credential private. Do not put it in source control, chat, logs, or a URL.
+              </p>
+            </section>
+          </div>
+        </div>
+
+        <section class="zoo-card zoo-token-card" aria-labelledby="credentialsTitle">
+          <div class="zoo-card-heading">
+            <div>
+              <p class="kicker">Authorized clients</p>
+              <h2 id="credentialsTitle">Active credentials</h2>
+            </div>
+            <button class="secondary-button" id="refreshTokens" type="button">Refresh</button>
+          </div>
+          <p class="zoo-card-copy">
+            Revoke anything you no longer recognize or use. Revocation immediately prevents that
+            credential from making new requests.
+          </p>
+          <p class="zoo-list-message" id="tokenListMessage" role="status" aria-live="polite"></p>
+          <ul class="zoo-token-list" id="tokenList" aria-label="Active Zoo Code credentials"></ul>
+        </section>
+
+        <footer class="zoo-footer">
+          <span>Credentials are tied to your signed-in KevinBeLLM account.</span>
+          <a href="./">Return to your private workspace</a>
+        </footer>
+      </main>
+    </div>
+
+    <noscript>
+      <p class="noscript-note zoo-noscript">JavaScript is required to verify your session and manage credentials.</p>
+    </noscript>
+  </body>
+</html>

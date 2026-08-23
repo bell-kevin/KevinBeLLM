@@ -8,6 +8,7 @@ from app.config import load_settings
 
 def _clear_inference_environment(monkeypatch) -> None:
     monkeypatch.delenv("INFERENCE_BASE_URL", raising=False)
+    monkeypatch.delenv("ZOO_API_BASE_URL", raising=False)
 
 
 def test_inference_defaults_to_llamacpp(monkeypatch) -> None:
@@ -19,6 +20,8 @@ def test_inference_defaults_to_llamacpp(monkeypatch) -> None:
     assert settings.inference_base_url == "http://127.0.0.1:8080"
     assert settings.default_model == "kevinbellm-27b"
     assert settings.chat_concurrency == 1
+    assert settings.zoo_api_base_url == "http://127.0.0.1:3000/v1"
+    assert settings.api_token_ttl_seconds == 30 * 24 * 3600
 
 
 def test_llamacpp_inference_configuration(monkeypatch) -> None:
@@ -37,4 +40,24 @@ def test_non_loopback_inference_configuration_is_rejected(monkeypatch) -> None:
     monkeypatch.setenv("INFERENCE_BASE_URL", "http://192.168.1.25:8080")
 
     with pytest.raises(RuntimeError, match="loopback host"):
+        load_settings()
+
+
+def test_remote_zoo_api_requires_https_and_v1_path(monkeypatch) -> None:
+    _clear_inference_environment(monkeypatch)
+    monkeypatch.setenv("ZOO_API_BASE_URL", "http://api.example.test/v1")
+    with pytest.raises(RuntimeError, match="HTTPS"):
+        load_settings()
+
+    monkeypatch.setenv("ZOO_API_BASE_URL", "https://api.example.test/openai")
+    with pytest.raises(RuntimeError, match="end in /v1"):
+        load_settings()
+
+
+def test_zoo_output_budget_must_leave_input_context(monkeypatch) -> None:
+    _clear_inference_environment(monkeypatch)
+    monkeypatch.setenv("ZOO_CONTEXT_WINDOW", "4096")
+    monkeypatch.setenv("ZOO_MAX_OUTPUT_TOKENS", "4096")
+
+    with pytest.raises(RuntimeError, match="must be smaller"):
         load_settings()

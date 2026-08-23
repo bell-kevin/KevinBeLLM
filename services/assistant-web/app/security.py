@@ -20,6 +20,8 @@ from fastapi import HTTPException, Request
 
 SESSION_COOKIE = "kevinbellm_session"
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{40,100}$")
+API_TOKEN_PREFIX = "kbm_v1_"
+_API_TOKEN_RE = re.compile(r"^kbm_v1_[A-Za-z0-9_-]{40,100}$")
 
 # Argon2id with deliberately meaningful memory cost. Password work runs off the
 # event loop in callers so one login cannot stall unrelated health checks.
@@ -58,12 +60,21 @@ def new_session_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def new_api_token() -> str:
+    """Return a high-entropy credential with a recognizable, versioned prefix."""
+    return f"{API_TOKEN_PREFIX}{secrets.token_urlsafe(32)}"
+
+
 def session_digest(token: str) -> bytes:
     return hashlib.sha256(token.encode("ascii", "strict")).digest()
 
 
 def valid_session_token(token: str | None) -> bool:
     return bool(token and _TOKEN_RE.fullmatch(token))
+
+
+def valid_api_token(token: str | None) -> bool:
+    return bool(token and _API_TOKEN_RE.fullmatch(token))
 
 
 def csrf_token(session_token: str) -> str:

@@ -53,6 +53,7 @@ jobs:
           node --check services/assistant-web/static/app.js
           node --check services/assistant-web/static/login.js
           node --check services/assistant-web/static/markdown.js
+          node --check services/assistant-web/static/zoo-code.js
 
       - name: Run browser Markdown renderer tests
         working-directory: services/assistant-web
