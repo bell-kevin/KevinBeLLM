@@ -6,7 +6,7 @@ import hashlib
 import json
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import Annotated, Any, AsyncIterator, Literal
+from typing import Annotated, Any, AsyncIterator, Awaitable, Callable, Literal
 from uuid import uuid4
 
 import httpx
@@ -19,6 +19,15 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from .assistant import AssistantError, installed_models, run_chat
 from .config import STATIC_DIR, Settings, load_settings
 from .database import Database, User
+from .openai_gateway import (
+    OPENAI_MAX_REQUEST_BYTES,
+    OPENAI_MAX_RESPONSE_BYTES,
+    GatewayRequestError,
+    bearer_token,
+    open_upstream_chat,
+    read_upstream_json,
+    validate_chat_body,
+)
 from .security import (
     SESSION_COOKIE,
     BoundedRateLimiter,
@@ -33,19 +42,128 @@ from .security import (
 
 
 MAX_REQUEST_BYTES = 128 * 1024
+UPSTREAM_CLOSE_TIMEOUT_SECONDS = 5
+
+
+class OpenAIHTTPException(Exception):
+    def __init__(
+        self,
+        status_code: int,
+        message: str,
+        *,
+        error_type: str,
+        code: str,
+        param: str | None = None,
+        headers: dict[str, str] | None = None,
+    ):
+        self.status_code = status_code
+        self.message = message
+        self.error_type = error_type
+        self.code = code
+        self.param = param
+        self.headers = headers or {}
+
+
+class ManagedStreamingResponse(StreamingResponse):
+    """Run cleanup around the response's full ASGI lifetime, including headers."""
+
+    def __init__(
+        self,
+        *args: Any,
+        cleanup: Callable[[], Awaitable[None]],
+        **kwargs: Any,
+    ):
+        super().__init__(*args, **kwargs)
+        self._cleanup = cleanup
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            await self._cleanup()
 
 
 class RequestBodyLimitMiddleware:
-    """Read at most a bounded body before letting framework parsers buffer it."""
+    """Authenticate and bound bodies before framework parsers buffer them."""
 
-    def __init__(self, application: ASGIApp, maximum: int):
+    def __init__(
+        self,
+        application: ASGIApp,
+        maximum: int,
+        openai_maximum: int = OPENAI_MAX_REQUEST_BYTES,
+        api_database: Database | None = None,
+        api_client_limiter: BoundedRateLimiter | None = None,
+        api_credential_limiter: BoundedRateLimiter | None = None,
+        api_body_slots: asyncio.Semaphore | None = None,
+    ):
         self.application = application
         self.maximum = maximum
+        self.openai_maximum = openai_maximum
+        self.api_database = api_database
+        self.api_client_limiter = api_client_limiter
+        self.api_credential_limiter = api_credential_limiter
+        self.api_body_slots = api_body_slots
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or scope.get("method") not in {"POST", "PUT", "PATCH"}:
             await self.application(scope, receive, send)
             return
+        is_openai_chat = scope.get("path") == "/v1/chat/completions"
+        if is_openai_chat and self.api_database is not None:
+            request = Request(scope)
+            token = bearer_token(request)
+            client_key = request.client.host if request.client else "unknown"
+            client_rate = (
+                await self.api_client_limiter.check(f"client:{client_key}")
+                if self.api_client_limiter is not None
+                else None
+            )
+            credential_rate = (
+                await self.api_credential_limiter.check(
+                    f"token:{hashlib.sha256(token.encode('utf-8')).hexdigest()}"
+                )
+                if token and self.api_credential_limiter is not None
+                else None
+            )
+            limited_rate = (
+                client_rate
+                if client_rate is not None and not client_rate.allowed
+                else credential_rate
+                if credential_rate is not None and not credential_rate.allowed
+                else None
+            )
+            if limited_rate is not None:
+                await self._error(
+                    scope,
+                    send,
+                    429,
+                    "Too many API requests; try again shortly",
+                    error_type="rate_limit_error",
+                    code="rate_limit_exceeded",
+                    headers={"Retry-After": str(limited_rate.retry_after)},
+                )
+                return
+            user = await self.api_database.user_for_api_token(token or "", touch=False)
+            if user is None or token is None:
+                await self._error(
+                    scope,
+                    send,
+                    401,
+                    "Invalid or expired API key",
+                    error_type="authentication_error",
+                    code="invalid_api_key",
+                    headers={"WWW-Authenticate": 'Bearer realm="KevinBeLLM"'},
+                )
+                return
+            state = scope.setdefault("state", {})
+            state["preauthenticated_api_token"] = token
+            state["preauthenticated_api_user"] = user
+
+        maximum = (
+            self.openai_maximum
+            if is_openai_chat
+            else self.maximum
+        )
         declared: int | None = None
         for name, value in scope.get("headers", []):
             if name.lower() == b"content-length":
@@ -57,11 +175,28 @@ class RequestBodyLimitMiddleware:
                 if declared < 0:
                     await self._error(scope, send, 400, "Invalid Content-Length")
                     return
-                if declared > self.maximum:
+                if declared > maximum:
                     await self._error(scope, send, 413, "Request body is too large")
                     return
                 break
 
+        body_slot_acquired = False
+        if is_openai_chat and self.api_body_slots is not None:
+            if self.api_body_slots.locked():
+                await self._error(
+                    scope,
+                    send,
+                    503,
+                    "The local model queue is full; try again shortly",
+                    error_type="server_error",
+                    code="queue_full",
+                    headers={"Retry-After": "10"},
+                )
+                return
+            await self.api_body_slots.acquire()
+            body_slot_acquired = True
+
+        body_complete = False
         try:
             body = bytearray()
             async with asyncio.timeout(30):
@@ -72,15 +207,19 @@ class RequestBodyLimitMiddleware:
                     if message["type"] != "http.request":
                         continue
                     chunk = message.get("body", b"")
-                    if len(body) + len(chunk) > self.maximum:
+                    if len(body) + len(chunk) > maximum:
                         await self._error(scope, send, 413, "Request body is too large")
                         return
                     body.extend(chunk)
                     if not message.get("more_body", False):
                         break
+            body_complete = True
         except TimeoutError:
             await self._error(scope, send, 408, "Request body timed out")
             return
+        finally:
+            if body_slot_acquired and not body_complete:
+                self.api_body_slots.release()
 
         delivered = False
 
@@ -93,24 +232,56 @@ class RequestBodyLimitMiddleware:
             delivered = True
             return {"type": "http.request", "body": bytes(body), "more_body": False}
 
-        await self.application(scope, bounded_receive, send)
+        try:
+            await self.application(scope, bounded_receive, send)
+        finally:
+            if body_slot_acquired:
+                self.api_body_slots.release()
 
     @staticmethod
-    async def _error(scope: Scope, send: Send, status: int, detail: str) -> None:
+    async def _error(
+        scope: Scope,
+        send: Send,
+        status: int,
+        detail: str,
+        *,
+        error_type: str | None = None,
+        code: str | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         state = scope.setdefault("state", {})
         request_id = state.setdefault("request_id", uuid4().hex)
-        body = json.dumps({"detail": detail, "request_id": request_id}).encode("utf-8")
+        content = (
+            {
+                "error": {
+                    "message": detail,
+                    "type": error_type or "invalid_request_error",
+                    "param": None,
+                    "code": code or "invalid_request",
+                },
+                "request_id": request_id,
+            }
+            if scope.get("path", "").startswith("/v1/")
+            else {"detail": detail, "request_id": request_id}
+        )
+        body = json.dumps(content).encode("utf-8")
+        response_headers = [
+            (b"content-type", b"application/json"),
+            (b"cache-control", b"no-store"),
+            (b"content-length", str(len(body)).encode("ascii")),
+            (b"x-content-type-options", b"nosniff"),
+            (b"x-request-id", request_id.encode("ascii")),
+        ]
+        if headers:
+            response_headers.extend(
+                (name.lower().encode("ascii"), value.encode("latin-1"))
+                for name, value in headers.items()
+            )
         await send(
             {
                 "type": "http.response.start",
                 "status": status,
-                "headers": [
-                    (b"content-type", b"application/json"),
-                    (b"cache-control", b"no-store"),
-                    (b"content-length", str(len(body)).encode("ascii")),
-                    (b"x-content-type-options", b"nosniff"),
-                    (b"x-request-id", request_id.encode("ascii")),
-                ],
+                "headers": response_headers,
             }
         )
         await send({"type": "http.response.body", "body": body})
@@ -140,6 +311,21 @@ class ChangePasswordBody(BaseModel):
     def passwords_must_differ(self) -> "ChangePasswordBody":
         if self.current_password == self.new_password:
             raise ValueError("The new password must be different")
+        return self
+
+
+class ApiTokenCreateBody(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=False)
+
+    name: str = Field(min_length=1, max_length=80)
+    current_password: str = Field(min_length=1, max_length=1_024)
+
+    @model_validator(mode="after")
+    def normalize_name(self) -> "ApiTokenCreateBody":
+        cleaned = " ".join(self.name.strip().split())
+        if not cleaned:
+            raise ValueError("The token name is required")
+        self.name = cleaned
         return self
 
 
@@ -175,6 +361,54 @@ def _json_error(request: Request, status: int, detail: str) -> JSONResponse:
     )
 
 
+def _openai_error_response(
+    request: Request,
+    status: int,
+    message: str,
+    *,
+    error_type: str,
+    code: str,
+    param: str | None = None,
+    headers: dict[str, str] | None = None,
+) -> JSONResponse:
+    response = JSONResponse(
+        status_code=status,
+        content={
+            "error": {
+                "message": message,
+                "type": error_type,
+                "param": param,
+                "code": code,
+            },
+            "request_id": _request_id(request),
+        },
+    )
+    if headers:
+        response.headers.update(headers)
+    return response
+
+
+def _zoo_setup(settings: Settings) -> dict[str, Any]:
+    base_url = settings.zoo_api_base_url or f"{settings.public_url.rstrip('/')}/v1"
+    return {
+        "base_url": base_url,
+        "model": settings.default_model,
+        "context_window": settings.zoo_context_window,
+        "max_output_tokens": settings.zoo_max_output_tokens,
+        "token_ttl_days": settings.api_token_ttl_seconds // (24 * 3600),
+    }
+
+
+def _api_token_metadata(token: Any) -> dict[str, Any]:
+    return {
+        "id": token.id,
+        "name": token.name,
+        "created_at": token.created_at,
+        "expires_at": token.expires_at,
+        "last_used_at": token.last_used_at,
+    }
+
+
 def _delete_session_cookie(response: Response, settings: Settings) -> None:
     response.delete_cookie(
         SESSION_COOKIE,
@@ -200,6 +434,15 @@ def _safe_static_file(path: Path, static_dir: Path) -> Path | None:
     return resolved if resolved.is_file() else None
 
 
+async def _close_upstream_response(response: httpx.Response) -> None:
+    """Best-effort bounded close; queue release must never depend on its success."""
+    try:
+        async with asyncio.timeout(UPSTREAM_CLOSE_TIMEOUT_SECONDS):
+            await response.aclose()
+    except (Exception, asyncio.CancelledError):
+        pass
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     configured = settings or load_settings()
     database = Database(
@@ -211,6 +454,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     password_limiter = BoundedRateLimiter(5, 15 * 60)
     chat_limiter = BoundedRateLimiter(20, 60)
     session_limiter = BoundedRateLimiter(120, 60)
+    api_client_limiter = BoundedRateLimiter(240, 60)
+    api_credential_limiter = BoundedRateLimiter(120, 60)
+    api_body_slots = asyncio.Semaphore(
+        max(1, configured.chat_concurrency + configured.chat_pending)
+    )
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -244,7 +492,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     application.state.settings = configured
-    application.add_middleware(RequestBodyLimitMiddleware, maximum=MAX_REQUEST_BYTES)
+    application.state.api_body_slots = api_body_slots
+    application.add_middleware(
+        RequestBodyLimitMiddleware,
+        maximum=MAX_REQUEST_BYTES,
+        api_database=database,
+        api_client_limiter=api_client_limiter,
+        api_credential_limiter=api_credential_limiter,
+        api_body_slots=api_body_slots,
+    )
 
     @application.middleware("http")
     async def security_middleware(request: Request, call_next: Any) -> Response:
@@ -262,7 +518,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; "
             "base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
         )
-        if request.url.path.startswith("/api/"):
+        if request.url.path.startswith(("/api/", "/v1/")):
             response.headers["Cache-Control"] = "no-store"
         if configured.secure_cookie:
             response.headers["Strict-Transport-Security"] = "max-age=31536000"
@@ -280,6 +536,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if exc.headers:
             response.headers.update(exc.headers)
         return response
+
+    @application.exception_handler(OpenAIHTTPException)
+    async def openai_http_error(
+        request: Request, exc: OpenAIHTTPException
+    ) -> JSONResponse:
+        return _openai_error_response(
+            request,
+            exc.status_code,
+            exc.message,
+            error_type=exc.error_type,
+            code=exc.code,
+            param=exc.param,
+            headers=exc.headers,
+        )
 
     @application.exception_handler(Exception)
     async def unexpected_error(request: Request, _exc: Exception) -> JSONResponse:
@@ -309,6 +579,69 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if user is None or token is None:
             raise HTTPException(status_code=401, detail="Authentication required")
         request.state.session_token = token
+        request.state.user = user
+        return user
+
+    async def require_api_user(request: Request) -> User:
+        token = bearer_token(request)
+        preauthenticated_user = getattr(
+            request.state, "preauthenticated_api_user", None
+        )
+        preauthenticated_token = getattr(
+            request.state, "preauthenticated_api_token", None
+        )
+        if preauthenticated_user is not None:
+            live_user = (
+                await database.user_for_api_token(token or "")
+                if token is not None and token == preauthenticated_token
+                else None
+            )
+            if live_user is None or live_user.id != preauthenticated_user.id:
+                raise OpenAIHTTPException(
+                    401,
+                    "Invalid or expired API key",
+                    error_type="authentication_error",
+                    code="invalid_api_key",
+                    headers={"WWW-Authenticate": 'Bearer realm="KevinBeLLM"'},
+                )
+            request.state.api_token = token
+            request.state.user = live_user
+            return live_user
+
+        client_key = request.client.host if request.client else "unknown"
+        client_rate = await api_client_limiter.check(f"client:{client_key}")
+        credential_rate = (
+            await api_credential_limiter.check(
+                f"token:{hashlib.sha256(token.encode('utf-8')).hexdigest()}"
+            )
+            if token
+            else None
+        )
+        limited_rate = (
+            client_rate
+            if not client_rate.allowed
+            else credential_rate
+            if credential_rate is not None and not credential_rate.allowed
+            else None
+        )
+        if limited_rate is not None:
+            raise OpenAIHTTPException(
+                429,
+                "Too many API requests; try again shortly",
+                error_type="rate_limit_error",
+                code="rate_limit_exceeded",
+                headers={"Retry-After": str(limited_rate.retry_after)},
+            )
+        user = await database.user_for_api_token(token or "")
+        if user is None or token is None:
+            raise OpenAIHTTPException(
+                401,
+                "Invalid or expired API key",
+                error_type="authentication_error",
+                code="invalid_api_key",
+                headers={"WWW-Authenticate": 'Bearer realm="KevinBeLLM"'},
+            )
+        request.state.api_token = token
         request.state.user = user
         return user
 
@@ -384,6 +717,69 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "csrf_token": csrf_token(token),
             }
         )
+
+    @application.get("/api/auth/api-tokens")
+    async def list_api_tokens(
+        user: Annotated[User, Depends(require_user)],
+    ) -> dict[str, Any]:
+        tokens = await database.api_tokens_for_user(user.id)
+        return {
+            "tokens": [_api_token_metadata(token) for token in tokens],
+            "setup": _zoo_setup(configured),
+        }
+
+    @application.post("/api/auth/api-tokens", status_code=201)
+    async def create_api_token(
+        request: Request,
+        body: ApiTokenCreateBody,
+        user: Annotated[User, Depends(require_user)],
+        _csrf: Annotated[None, Depends(require_csrf)],
+    ) -> dict[str, Any]:
+        rate = await password_limiter.check(f"user:{user.id}")
+        if not rate.allowed:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many password attempts; try again later",
+                headers={"Retry-After": str(rate.retry_after)},
+            )
+        login_user = await database.user_for_login(user.email)
+        if not await verify_password(
+            login_user.password_hash if login_user else None, body.current_password
+        ):
+            raise HTTPException(status_code=401, detail="Current password is incorrect")
+        assert login_user is not None and login_user.password_hash is not None
+        try:
+            secret, credential = await database.create_api_token(
+                user.id,
+                body.name,
+                configured.api_token_ttl_seconds,
+                expected_password_hash=login_user.password_hash,
+                session_token=request.state.session_token,
+            )
+        except PermissionError as exc:
+            raise HTTPException(
+                status_code=401, detail="Authentication changed; sign in again"
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {
+            "token": secret,
+            "credential": _api_token_metadata(credential),
+            "setup": _zoo_setup(configured),
+        }
+
+    @application.delete("/api/auth/api-tokens/{token_id}", status_code=204)
+    async def revoke_api_token(
+        request: Request,
+        token_id: int,
+        user: Annotated[User, Depends(require_user)],
+        _csrf: Annotated[None, Depends(require_csrf)],
+    ) -> Response:
+        if token_id < 1 or not await database.delete_api_token(user.id, token_id):
+            raise HTTPException(status_code=404, detail="API token not found")
+        for task in tuple(request.app.state.active_chats.get(user.id, ())):
+            task.cancel()
+        return Response(status_code=204)
 
     @application.post("/api/auth/logout", status_code=204)
     async def logout(
@@ -585,6 +981,275 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             },
         )
 
+    @application.get("/v1/models")
+    async def openai_models(
+        request: Request,
+        _user: Annotated[User, Depends(require_api_user)],
+    ) -> dict[str, Any]:
+        try:
+            catalog = await installed_models(request.app.state.http, configured)
+        except AssistantError as exc:
+            raise OpenAIHTTPException(
+                502,
+                "The local model service is unavailable",
+                error_type="server_error",
+                code="upstream_unavailable",
+            ) from exc
+        return {
+            "object": "list",
+            "data": [
+                {
+                    "id": model["id"],
+                    "object": "model",
+                    "created": 0,
+                    "owned_by": "kevinbellm",
+                }
+                for model in catalog["models"]
+            ],
+        }
+
+    @application.post("/v1/chat/completions")
+    async def openai_chat_completions(
+        request: Request,
+        user: Annotated[User, Depends(require_api_user)],
+    ) -> Response:
+        try:
+            payload = await request.json()
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise OpenAIHTTPException(
+                400,
+                "The request body is not valid JSON",
+                error_type="invalid_request_error",
+                code="invalid_json",
+            ) from exc
+        try:
+            body = validate_chat_body(payload, configured)
+        except GatewayRequestError as exc:
+            raise OpenAIHTTPException(
+                400,
+                exc.message,
+                error_type="invalid_request_error",
+                code="invalid_request",
+                param=exc.param,
+            ) from exc
+        loop = asyncio.get_running_loop()
+        inference_deadline = loop.time() + configured.chat_deadline_seconds
+
+        rate = await chat_limiter.check(f"user:{user.id}")
+        if not rate.allowed:
+            raise OpenAIHTTPException(
+                429,
+                "Too many chat requests; try again shortly",
+                error_type="rate_limit_error",
+                code="rate_limit_exceeded",
+                headers={"Retry-After": str(rate.retry_after)},
+            )
+        if request.app.state.chat_admission.locked():
+            raise OpenAIHTTPException(
+                503,
+                "The local model queue is full; try again shortly",
+                error_type="server_error",
+                code="queue_full",
+                headers={"Retry-After": "10"},
+            )
+
+        async with asyncio.timeout_at(inference_deadline):
+            await request.app.state.chat_admission.acquire()
+        slot_acquired = False
+        handed_off = False
+        released = False
+        upstream: httpx.Response | None = None
+        task = asyncio.current_task()
+        active = request.app.state.active_chats.setdefault(user.id, set())
+        if task is not None:
+            active.add(task)
+
+        def release_resources() -> None:
+            nonlocal released
+            if released:
+                return
+            released = True
+            if slot_acquired:
+                request.app.state.chat_slots.release()
+            request.app.state.chat_admission.release()
+            if task is not None:
+                active.discard(task)
+            if not active:
+                request.app.state.active_chats.pop(user.id, None)
+
+        try:
+            try:
+                async with asyncio.timeout_at(inference_deadline):
+                    catalog = await installed_models(
+                        request.app.state.http, configured
+                    )
+            except AssistantError as exc:
+                raise OpenAIHTTPException(
+                    502,
+                    "The local model service is unavailable",
+                    error_type="server_error",
+                    code="upstream_unavailable",
+                ) from exc
+            installed_ids = {model["id"] for model in catalog["models"]}
+            if body["model"] not in installed_ids:
+                raise OpenAIHTTPException(
+                    404,
+                    "The requested model is not installed",
+                    error_type="invalid_request_error",
+                    code="model_not_found",
+                    param="model",
+                )
+
+            try:
+                queue_timeout_deadline = (
+                    loop.time() + configured.chat_queue_timeout_seconds
+                )
+                queue_deadline = min(
+                    inference_deadline,
+                    queue_timeout_deadline,
+                )
+                async with asyncio.timeout_at(queue_deadline):
+                    await request.app.state.chat_slots.acquire()
+                slot_acquired = True
+            except TimeoutError as exc:
+                if inference_deadline <= queue_timeout_deadline:
+                    raise
+                raise OpenAIHTTPException(
+                    503,
+                    "The local model remained busy; try again shortly",
+                    error_type="server_error",
+                    code="queue_timeout",
+                    headers={"Retry-After": "10"},
+                ) from exc
+
+            # A revoked or expired token must not start work after waiting in queue.
+            async with asyncio.timeout_at(inference_deadline):
+                live_user = await database.user_for_api_token(
+                    request.state.api_token, touch=False
+                )
+            if live_user is None or live_user.id != user.id:
+                raise OpenAIHTTPException(
+                    401,
+                    "Invalid or expired API key",
+                    error_type="authentication_error",
+                    code="invalid_api_key",
+                    headers={"WWW-Authenticate": 'Bearer realm="KevinBeLLM"'},
+                )
+
+            try:
+                async with asyncio.timeout_at(inference_deadline):
+                    upstream = await open_upstream_chat(
+                        request.app.state.http, configured, body
+                    )
+            except httpx.HTTPError as exc:
+                raise OpenAIHTTPException(
+                    502,
+                    "The local model service is unavailable",
+                    error_type="server_error",
+                    code="upstream_unavailable",
+                ) from exc
+
+            if not 200 <= upstream.status_code < 300:
+                response_to_close = upstream
+                upstream = None
+                await _close_upstream_response(response_to_close)
+                raise OpenAIHTTPException(
+                    502,
+                    "The local model service rejected the request",
+                    error_type="server_error",
+                    code="upstream_rejected",
+                )
+
+            content_type = upstream.headers.get("content-type", "").split(";", 1)[0].lower()
+            if body["stream"]:
+                if content_type != "text/event-stream":
+                    response_to_close = upstream
+                    upstream = None
+                    await _close_upstream_response(response_to_close)
+                    raise OpenAIHTTPException(
+                        502,
+                        "The local model returned an invalid streaming response",
+                        error_type="server_error",
+                        code="invalid_upstream_response",
+                    )
+                stream_response = upstream
+                stream_cleaned = False
+
+                async def event_stream() -> AsyncIterator[bytes]:
+                    received = 0
+                    try:
+                        async with asyncio.timeout_at(inference_deadline):
+                            async for chunk in stream_response.aiter_bytes():
+                                received += len(chunk)
+                                if received > OPENAI_MAX_RESPONSE_BYTES:
+                                    return
+                                yield chunk
+                    except Exception:
+                        return
+
+                async def cleanup_stream() -> None:
+                    nonlocal stream_cleaned
+                    if stream_cleaned:
+                        return
+                    stream_cleaned = True
+                    # Return scarce capacity even if the transport cannot close.
+                    release_resources()
+                    await _close_upstream_response(stream_response)
+
+                managed_response = ManagedStreamingResponse(
+                    event_stream(),
+                    cleanup=cleanup_stream,
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-store",
+                        "Connection": "keep-alive",
+                        "X-Accel-Buffering": "no",
+                        "X-Request-ID": _request_id(request),
+                    },
+                )
+                handed_off = True
+                return managed_response
+
+            if content_type != "application/json":
+                response_to_close = upstream
+                upstream = None
+                await _close_upstream_response(response_to_close)
+                raise OpenAIHTTPException(
+                    502,
+                    "The local model returned an invalid response",
+                    error_type="server_error",
+                    code="invalid_upstream_response",
+                )
+            try:
+                async with asyncio.timeout_at(inference_deadline):
+                    content = await read_upstream_json(upstream)
+            except (GatewayRequestError, httpx.HTTPError) as exc:
+                raise OpenAIHTTPException(
+                    502,
+                    "The local model returned an invalid response",
+                    error_type="server_error",
+                    code="invalid_upstream_response",
+                ) from exc
+            finally:
+                response_to_close = upstream
+                upstream = None
+                await _close_upstream_response(response_to_close)
+            return Response(content=content, media_type="application/json")
+        except TimeoutError as exc:
+            raise OpenAIHTTPException(
+                504,
+                "The chat request reached its safety deadline",
+                error_type="server_error",
+                code="request_timeout",
+            ) from exc
+        finally:
+            if not handed_off:
+                response_to_close = upstream
+                upstream = None
+                release_resources()
+                if response_to_close is not None:
+                    await _close_upstream_response(response_to_close)
+
     @application.get("/")
     async def root(request: Request) -> Response:
         user, _token = await optional_user(request)
@@ -607,7 +1272,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @application.get("/{asset_path:path}")
     async def static_asset(request: Request, asset_path: str) -> Response:
-        if asset_path.startswith("api/"):
+        if asset_path.startswith(("api/", "v1/")):
             raise HTTPException(status_code=404, detail="Not found")
         candidate = _safe_static_file(STATIC_DIR / asset_path, STATIC_DIR)
         if candidate:

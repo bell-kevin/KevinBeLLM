@@ -110,6 +110,69 @@ initially reachable without Access.
 `remote-route.example.yml` is a review worksheet for these dashboard values.
 It is not read by `cloudflared`.
 
+## Zoo Code Service Auth path
+
+The browser-facing application at `assistant.example.com/*` must keep its
+interactive exact-email or narrow-group Allow policy. Zoo Code cannot complete
+that browser redirect. To use the extension remotely, add a second,
+more-specific Access application for `assistant.example.com/v1/*`. Cloudflare
+evaluates the most-specific matching application, so the API path can require a
+device credential without weakening the root browser policy.
+
+Configure the API-path application as follows:
+
+1. Create a separate Cloudflare Access service token for each Zoo Code
+   installation. Give it a device-specific name and an appropriate expiry.
+2. Add a **Service Auth** policy to the `assistant.example.com/v1/*`
+   application. Its Include rule must select only the intended service token.
+3. Do not add an **Allow Everyone**, **Bypass**, or reusable shared-token rule.
+4. In Zoo Code's OpenAI Compatible provider, keep the KevinBeLLM personal token
+   in **API Key**. Add the Cloudflare service token as two custom headers:
+   `CF-Access-Client-Id` and `CF-Access-Client-Secret`.
+5. Set the KevinBeLLM root `.env` value `ZOO_API_BASE_URL` to
+   `https://assistant.example.com/v1` so the authenticated credential page
+   displays the remote URL.
+6. Copy the unique **Application Audience (AUD)** tag from both the root Access
+   application and the `/v1/*` Access application. In the tunnel route's
+   **Protect with Access** origin settings, keep validation required and add
+   both AUD tags to its accepted audience list. If only the root AUD is
+   accepted, valid Zoo service-auth requests will fail at the connector; never
+   work around that failure by disabling Protect with Access. See Cloudflare's
+   [origin parameters documentation][origin-parameters].
+
+These are two independent gates: the Cloudflare headers authorize the VS Code
+installation to reach the origin, while `Authorization: Bearer <KevinBeLLM
+token>` authorizes the KevinBeLLM account. Revoking either credential blocks
+access. Never put either value in this worksheet, `.env`, Compose, source
+control, shell history, screenshots, or support messages.
+
+Do not enable Cloudflare's optional single-header service-token mode on the
+`Authorization` header. Zoo Code already needs that header for the KevinBeLLM
+Bearer token; keep Cloudflare authentication in its two dedicated headers.
+
+Zoo Code stores its API Key in VS Code Secret Storage, but its custom-header
+configuration and exported provider profiles should still be treated as
+sensitive. Prefer the repository's SSH-forward path or a private VPN when that
+is practical; it avoids storing Cloudflare's client secret in the extension.
+
+Before relying on the path, test all four cases with a disposable short prompt:
+
+1. No credentials: Cloudflare denies the request.
+2. Cloudflare headers only: the request reaches KevinBeLLM but `/v1/models`
+   returns `401`.
+3. KevinBeLLM token only: Cloudflare denies the request.
+4. Both credential sets: `/v1/models` succeeds and Zoo Code can complete a
+   tool-enabled request.
+
+Then revoke the KevinBeLLM token and Cloudflare service token one at a time and
+confirm each revocation fails closed. Keep the root interactive application in
+the acceptance test below; the API-path application is an additional route,
+not a replacement for browser login.
+
+Also repeat the successful case after reviewing the tunnel route: its Protect
+with Access audience allowlist must contain the AUD tags for both the root and
+`/v1/*` applications.
+
 ## Configure Machine A
 
 From the project checkout on Machine A:
@@ -252,4 +315,5 @@ and disable or remove the published route before correcting Access:
 [policies]: https://developers.cloudflare.com/cloudflare-one/access-controls/policies/
 [publish-app]: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/
 [firewall]: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/tunnel-with-firewall/
+[origin-parameters]: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/origin-parameters/
 [run-parameters]: https://developers.cloudflare.com/tunnel/advanced/run-parameters/
