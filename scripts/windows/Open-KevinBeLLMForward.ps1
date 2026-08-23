@@ -13,6 +13,7 @@ $null = Get-Command ssh.exe -ErrorAction Stop
 
 Write-Host "Opening loopback-only forwards through Machine A. Keep this window open."
 Write-Host "KevinBeLLM UI: http://127.0.0.1:$WebLocalPort"
+Write-Host "Zoo Code API (login-issued token required): http://127.0.0.1:$WebLocalPort/v1"
 
 $sshArgs = @(
     "-NT",
@@ -22,6 +23,7 @@ $sshArgs = @(
     "-L", "127.0.0.1:${WebLocalPort}:127.0.0.1:3000"
 )
 if ($ForwardLlamaApi) {
+    Write-Warning "The raw llama.cpp diagnostic API has no KevinBeLLM login. Never use it as Zoo Code's Base URL."
     Write-Host "llama.cpp API: http://127.0.0.1:$LlamaLocalPort"
     $sshArgs += @("-L", "127.0.0.1:${LlamaLocalPort}:127.0.0.1:8080")
 }

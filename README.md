@@ -148,6 +148,25 @@ PREFERRED_MODELS=kevinbellm-27b
 
 The inference address is required to remain on loopback.
 
+## Zoo Code for VS Code
+
+KevinBeLLM now exposes a Bearer-authenticated OpenAI Chat Completions adapter for
+the official Zoo Code extension. A signed-in user re-enters their password to
+create a named per-installation token, then configures Zoo Code's **OpenAI
+Compatible** provider with the displayed Base URL, token, and model ID. Tokens
+are shown once, stored only as digests on the server, expire, can be revoked
+individually, and are revoked wholesale on password change.
+
+The adapter authenticates both `/v1/models` and `/v1/chat/completions`, preserves
+Zoo's native streamed tool calls, and reuses KevinBeLLM's model allowlist, GPU
+queue, deadlines, response bounds, and per-user rate limit. It never exposes the
+raw llama.cpp listener.
+
+Follow [the complete Zoo Code guide](docs/ZOO_CODE.md) for Marketplace
+installation, token creation, exact provider settings, the recommended SSH path,
+the Cloudflare Service Auth path, rotation, and safe coding-agent permissions.
+Never point Zoo Code at port 8080 or the diagnostic port 18080.
+
 ## Assistant behavior
 
 Answers stream from llama.cpp as the model produces them, so visible text starts
@@ -189,7 +208,7 @@ guaranteed to fit the model context.
 ## Project layout
 
 - `services/assistant-web/` — authenticated FastAPI assistant with a llama.cpp
-  OpenAI-compatible backend adapter.
+  backend adapter and a Bearer-authenticated Zoo Code compatibility gateway.
 - `services/live-tools/` — small read-only FastAPI tool service: Open-Meteo
   weather and forecast, and Hugging Face model discovery. It has no shell,
   filesystem, model-download, email, or account tools.

@@ -35,6 +35,35 @@ by Cloudflare Access and then the application's own login. Do not point GitHub
 Pages JavaScript directly at a private service port, and do not use a public
 unauthenticated quick tunnel.
 
+## Zoo Code API boundary
+
+Zoo Code reaches only KevinBeLLM's authenticated port 3000 adapter. Never use
+raw llama.cpp on port 8080 or the optional port-18080 diagnostic SSH forward as
+a provider: those endpoints have no KevinBeLLM login.
+
+The `/v1/models` and `/v1/chat/completions` routes require a separate personal
+Bearer token on every request. Browser cookies do not authorize them. Tokens can
+be created only from a live browser session with CSRF validation and current-
+password confirmation; their plaintext is returned once, their digest is stored,
+and expiry, revocation, bounded count, last-used metadata, per-user rate limits,
+the installed-model allowlist, request/response caps, and the GPU admission queue
+are enforced at the application boundary. Password changes revoke all tokens.
+
+For remote use, do not weaken the root Access policy. Give the more-specific
+`/v1/*` path a Service Auth policy limited to per-device Cloudflare service
+tokens, so requests need both Cloudflare credentials and the KevinBeLLM token.
+Never use an Everyone or Bypass policy. See [the Zoo Code guide](docs/ZOO_CODE.md).
+
+Zoo Code is a coding agent, so its approved tools can read/write workspace files
+and execute terminal commands on the client. Authentication prevents unauthorized
+inference use; it does not neutralize prompt injection in repository content.
+Use trusted workspaces, conservative read/write allowlists, explicitly enable
+Destructive Command Guard, keep broad auto-approval off, and retain the
+repository's secret-focused `.rooignore`.
+Extend that file for project-specific private data, and remember it is not an OS
+sandbox. Never export or share a Zoo profile containing API keys or Cloudflare
+custom-header credentials.
+
 ## llama.cpp service boundary
 
 The pinned build sets `GGML_RPC=OFF` and produces only `llama-server`,

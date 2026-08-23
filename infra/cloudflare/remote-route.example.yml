@@ -6,7 +6,13 @@ tunnel:
   name: kevinbellm
   public_hostname: assistant.example.com
   service: http://127.0.0.1:3000
-  protect_with_access: true
+  protect_with_access:
+    required: true
+    # Protect with Access must accept tokens issued by both path-matched apps.
+    # These are application AUD tags, not secrets or service-token values.
+    audience_tags:
+      - ROOT_ACCESS_APPLICATION_AUD
+      - ZOO_CODE_API_ACCESS_APPLICATION_AUD
 
 access_application:
   type: self-hosted
@@ -18,3 +24,20 @@ access_application:
       - owner@example.com
     include_everyone: false
     bypass: false
+
+# A second, more-specific Access application is required only for remote Zoo
+# Code clients. Create one short-lived service token per device in the dashboard;
+# never paste its client ID or secret into this worksheet.
+zoo_code_access_application:
+  type: self-hosted
+  hostname: assistant.example.com
+  path: /v1/*
+  precedence: more_specific_than_root_application
+  policy:
+    action: service_auth
+    include_service_token_names:
+      - zoo-code-device-example
+    include_everyone: false
+    bypass: false
+  origin_authorization:
+    kevinbellm_bearer_token_required: true
