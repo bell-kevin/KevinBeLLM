@@ -1,0 +1,38 @@
+# Keep local credentials and runtime state out of Zoo Code tools and context.
+# Syntax matches .gitignore. Zoo Code implicitly prevents editing this file.
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+**/secrets/**
+**/.ssh/**
+id_ed25519*
+id_rsa*
+known_hosts*
+*.key
+*.pem
+*.p12
+*.pfx
+*.kdbx
+.netrc
+.npmrc
+.pypirc
+
+# Local application data and outputs can contain prompts, user metadata, or
+# secrets and are not needed as model context.
+*.db
+*.sqlite*
+*.log
+.runtime-engine
+.bootstrap-complete
+infra/search/data/**
+
+# Large model and build artifacts should never be read into coding context.
+*.gguf
+*.safetensors
+models/**
+build/**
+dist/**

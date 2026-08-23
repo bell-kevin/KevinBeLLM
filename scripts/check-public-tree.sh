@@ -35,4 +35,10 @@ if git grep -q -I -E -- 'eyJ[A-Za-z0-9_+/=-]{100,}' -- .; then
   fail 'a Cloudflare-tunnel-token-shaped credential appears in tracked content'
 fi
 
+# KevinBeLLM API tokens have a fixed prefix plus a 256-bit URL-safe secret.
+# Documentation placeholders such as "kbm_v1_..." intentionally do not match.
+if git grep -q -I -E -- 'kbm_v1_[A-Za-z0-9_-]{40,}' -- .; then
+  fail 'a KevinBeLLM-API-token-shaped credential appears in tracked content'
+fi
+
 printf 'Public-tree hygiene checks passed.\n'
