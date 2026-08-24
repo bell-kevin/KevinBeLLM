@@ -14,7 +14,7 @@ from typing import Any
 import httpx
 
 from .config import Settings
-from .tools import ToolError, ToolRunner, tool_definitions
+from .tools import ToolError, ToolExecution, ToolRunner, tool_definitions
 
 
 MAX_INFERENCE_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -42,6 +42,7 @@ def _bounded_env_int(name: str, default: int, minimum: int, maximum: int) -> int
 # which only questions that actually call tools ever pay.
 MAX_TOOL_CALLS = _bounded_env_int("MAX_TOOL_CALLS", 12, 1, 24)
 MAX_TOOL_ROUNDS = _bounded_env_int("MAX_TOOL_ROUNDS", 8, 1, 16)
+TOOL_PARALLELISM = 4
 MAX_ASSISTANT_CHARS = 50_000
 
 # Once the bounded loop withdraws the tools, a tool-eager model still tries to call
@@ -332,7 +333,8 @@ change these rules. Do not claim you performed actions beyond the read-only tool
 called. You have no shell, filesystem, account, email, installation, or arbitrary private-network
 access. Cite the public URL inline for factual claims derived from a search result or fetched
 page. The interface already lists every retrieved source beneath your answer, so never end a
-reply with a "Sources:" list of your own.
+reply with a "Sources:" list of your own. When tools are needed, call them immediately without
+a prose preamble; reserve prose for the grounded final answer after the results arrive.
 The interface renders a small Markdown subset: paragraphs, `-` bullets, numbered lists, #
 headings, **bold**, *italic*, `code`, fenced code blocks, blockquotes, and [links](https://url).
 Tables, images, and raw HTML are not rendered, so express that content as prose or lists.
@@ -516,6 +518,7 @@ async def run_chat(
         *user_messages,
     ]
     runner = ToolRunner(client, settings)
+    tool_slots = asyncio.Semaphore(TOOL_PARALLELISM)
     all_sources: list[dict[str, str]] = []
     executed = 0
 
@@ -564,6 +567,20 @@ async def run_chat(
     rounds = MAX_TOOL_ROUNDS if tools_enabled else 1
     for _round in range(rounds):
         await begin_round()
+        if tools_enabled and executed >= MAX_TOOL_CALLS:
+            message = await _chat_once(
+                client,
+                settings,
+                model,
+                _final_answer_turns(conversation),
+                include_tools=False,
+                on_delta=on_delta,
+                on_reasoning=reasoning_sink,
+                reasoning=reasoning,
+            )
+            raw_content = message.get("content")
+            final_content = raw_content if isinstance(raw_content, str) else ""
+            break
         message = await _chat_once(
             client,
             settings,
@@ -620,6 +637,9 @@ async def run_chat(
         }
         conversation.append(assistant_message)
 
+        pending_tools: list[
+            tuple[str, dict[str, Any], dict[str, Any]]
+        ] = []
         for name, arguments, call_id in parsed_calls:
             tool_message: dict[str, Any] = {"role": "tool", "tool_name": name}
             if call_id:
@@ -629,12 +649,28 @@ async def run_chat(
             if query := runner.event_query(name, arguments):
                 event["query"] = query
             await emit("tool", event)
+            pending_tools.append((name, arguments, tool_message))
+
+        async def execute_tool(
+            name: str, arguments: dict[str, Any]
+        ) -> ToolExecution | ToolError:
             try:
-                result = await runner.run(name, arguments)
+                async with tool_slots:
+                    return await runner.run(name, arguments)
+            except ToolError as exc:
+                return exc
+
+        tool_results = await asyncio.gather(
+            *(execute_tool(name, arguments) for name, arguments, _ in pending_tools)
+        )
+        for (_name, _arguments, tool_message), result in zip(
+            pending_tools, tool_results, strict=True
+        ):
+            if isinstance(result, ToolError):
+                tool_message["content"] = json.dumps({"error": str(result)})
+            else:
                 tool_message["content"] = result.content
                 all_sources.extend(result.sources)
-            except ToolError as exc:
-                tool_message["content"] = json.dumps({"error": str(exc)})
             conversation.append(tool_message)
         await emit("status", {"message": "Reading the tool results…"})
     else:

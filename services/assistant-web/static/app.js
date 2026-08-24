@@ -414,15 +414,24 @@
     }
   }
 
+  let scrollFrame = null;
+  let forcePendingScroll = false;
+
   function scrollConversation(force = false) {
-    const distanceFromBottom = elements.chatScroll.scrollHeight
-      - elements.chatScroll.scrollTop
-      - elements.chatScroll.clientHeight;
-    if (force || distanceFromBottom < 150) {
-      window.requestAnimationFrame(() => {
-        elements.chatScroll.scrollTop = elements.chatScroll.scrollHeight;
-      });
+    forcePendingScroll = forcePendingScroll || force;
+    if (scrollFrame !== null) {
+      return;
     }
+    scrollFrame = window.requestAnimationFrame(() => {
+      scrollFrame = null;
+      const distanceFromBottom = elements.chatScroll.scrollHeight
+        - elements.chatScroll.scrollTop
+        - elements.chatScroll.clientHeight;
+      if (forcePendingScroll || distanceFromBottom < 150) {
+        elements.chatScroll.scrollTop = elements.chatScroll.scrollHeight;
+      }
+      forcePendingScroll = false;
+    });
   }
 
   function revealMessages() {

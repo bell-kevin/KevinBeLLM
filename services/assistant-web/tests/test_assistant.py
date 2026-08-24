@@ -361,6 +361,54 @@ def test_llamacpp_tool_call_round_trip(
     }
 
 
+def test_same_round_tool_calls_execute_concurrently(monkeypatch, tmp_path) -> None:
+    settings = _settings(tmp_path)
+    model_calls = 0
+    started = 0
+    both_started = asyncio.Event()
+
+    async def fake_chat_once(
+        _client, _settings, _model, _messages, *, include_tools,
+        on_delta=None, on_reasoning=None, reasoning=False,
+    ):
+        nonlocal model_calls
+        model_calls += 1
+        if include_tools and model_calls == 1:
+            return {
+                "content": "",
+                "tool_calls": [
+                    {"id": "one", "function": {"name": "web_search", "arguments": {"query": "one"}}},
+                    {"id": "two", "function": {"name": "news_search", "arguments": {"query": "two"}}},
+                ],
+            }
+        return {"content": "Finished"}
+
+    async def fake_tool_run(_self, _name, _arguments):
+        nonlocal started
+        started += 1
+        if started == 2:
+            both_started.set()
+        await asyncio.wait_for(both_started.wait(), timeout=0.5)
+        return ToolExecution("{}")
+
+    monkeypatch.setattr("app.assistant._chat_once", fake_chat_once)
+    monkeypatch.setattr("app.assistant.ToolRunner.run", fake_tool_run)
+
+    async def run():
+        async with httpx.AsyncClient() as client:
+            return await run_chat(
+                client,
+                settings,
+                "test-model",
+                [{"role": "user", "content": "compare two current results"}],
+                lambda _event, _payload: asyncio.sleep(0),
+            )
+
+    assert asyncio.run(run()) == ("Finished", [])
+    assert started == 2
+    assert model_calls == 2
+
+
 def test_sources_stay_structured_and_are_never_appended_to_the_answer(
     monkeypatch, tmp_path
 ) -> None:
@@ -562,5 +610,7 @@ def test_withdrawn_tools_ask_for_a_final_answer_and_strip_any_leak(
 
     content, _sources = asyncio.run(run())
     assert content == "Real answer."
+    assert len(model_requests) == 2
+    assert include_tools_seen == [True, False]
     assert include_tools_seen[-1] is False
     assert model_requests[-1][-1]["content"] == FINAL_ANSWER_INSTRUCTION

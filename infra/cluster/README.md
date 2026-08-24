@@ -63,13 +63,16 @@ Run as A's normal login/service user:
 
 ```bash
 ./scripts/cluster/install-llama-cpp.sh
-cat ~/.local/opt/llama.cpp-b10451/KEVINBELLM_BUILD_SPEC.txt
+cat ~/.local/opt/llama.cpp-b10451-bdver2/KEVINBELLM_BUILD_SPEC.txt
 ```
 
 The installer verifies immutable commit
 `10bf611e533d81f739128304991c5e133c6aebd8`, CUDA compute capability 8.6,
-disabled embedded/prebuilt UI, and `GGML_RPC=OFF`. It builds only
-`llama-server`, `llama-cli`, and `llama-bench`.
+flash attention, CUDA graphs, disabled embedded/prebuilt UI, and `GGML_RPC=OFF`.
+It also verifies that the FX-8370's `bdver2 -mno-lwp` target reaches llama.cpp's
+sampler, grammar, vocabulary, Unicode, and common sampling translation units,
+and that the linked CUDA runtime major matches the selected compiler. It builds
+only `llama-server`, `llama-cli`, and `llama-bench`.
 
 ## 3. Download and verify the everyday model
 
@@ -130,11 +133,13 @@ env file; its endpoint and security arguments cannot be changed there:
 - hardened systemd filesystem, capability, namespace, and privilege controls.
 
 The measured persistent configuration is a 32,768-token context, batch 2,048,
-ubatch 512, eight CPU threads, one request slot, q8_0 K/V cache, flash attention,
-memory mapping, and Qwen3.8 MTP with draft maximum 2. At the deployed sampling
-temperature it generates roughly 22-27 tokens/second, with a median near 24.
-Prefill is about 595 tokens/second on a short prompt and 470 at 8k. These are
-measurements of this Machine A, not general guarantees.
+ubatch 512, eight generation and batch CPU threads, one request slot, q8_0 K/V
+cache, flash attention, memory mapping, eight recurrent-state checkpoints, a
+4 GiB state-cache cap, and Qwen3.8 MTP with draft maximum 2 and probability
+threshold zero. On the fixed 128-token corpus, median decode is 29.00
+tokens/second with a tool schema and 34.53 tokens/second on the unconstrained
+GPU-sampling path. A cold 14,879-token prompt prefills at about 466
+tokens/second. These are measurements of this Machine A, not general guarantees.
 
 Keep ubatch at 512: 1,024 sends twice as much activation data over the PCIe 2.0
 x1 boundary and reduced measured prefill, while 2,048 exhausted VRAM. The
@@ -143,6 +148,17 @@ small decode cost. Benchmark changes across several fixed workloads at the
 application's deployed sampling settings; MTP acceptance makes output type a
 material part of the result. The repository root README records the detailed
 measurements.
+
+For a repeatable comparison, forward the raw API to laptop loopback and run:
+
+```bash
+python3 scripts/cluster/benchmark-inference.py \
+  --base-url http://127.0.0.1:18080
+```
+
+The default is one warm-up and three measured repetitions of both the Fast and
+production-shaped tool-schema paths. `--help` documents the fixed-workload,
+long-context, prompt-cache, alternate-branch, and JSON-output controls.
 
 Check the boundary and advertised alias:
 

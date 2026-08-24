@@ -9,7 +9,7 @@ project_dir="$(cd -- "${script_dir}/../.." && pwd)"
 . "${script_dir}/common.sh"
 
 enable_now=0
-llama_dir="${HOME}/.local/opt/llama.cpp-b10451"
+llama_dir="${HOME}/.local/opt/llama.cpp-b10451-bdver2"
 env_file=""
 restart_active=0
 
@@ -19,7 +19,7 @@ Usage: install-services.sh [options]
 
 Options:
   --env-file PATH    Private env file (default ~/.config/kevinbellm-cluster/standalone.env)
-  --llama-dir PATH   Pinned build root (default ~/.local/opt/llama.cpp-b10451)
+  --llama-dir PATH   Pinned build root (default ~/.local/opt/llama.cpp-b10451-bdver2)
   --enable-now       Enable and start the installed user unit
 
 Installs Machine A's inference user unit and enables systemd lingering so it
@@ -93,9 +93,20 @@ build_spec_file="${llama_dir}/KEVINBELLM_BUILD_SPEC.txt"
 for required_build_spec in \
   'commit=10bf611e533d81f739128304991c5e133c6aebd8' \
   'CMAKE_CUDA_ARCHITECTURES=86' \
+  'CMAKE_C_FLAGS=-march=bdver2 -mno-lwp' \
+  'CMAKE_CXX_FLAGS=-march=bdver2 -mno-lwp' \
+  'CMAKE_EXPORT_COMPILE_COMMANDS=ON' \
   'GGML_CUDA=ON' \
+  'GGML_CUDA_FA=ON' \
+  'GGML_CUDA_GRAPHS=ON' \
   'GGML_NATIVE=OFF' \
   'GGML_RPC=OFF' \
+  'GGML_SSE42=ON' \
+  'GGML_AVX=ON' \
+  'GGML_AVX2=OFF' \
+  'GGML_BMI2=OFF' \
+  'GGML_FMA=ON' \
+  'GGML_F16C=ON' \
   'LLAMA_BUILD_UI=OFF' \
   'LLAMA_USE_PREBUILT_UI=OFF'; do
   grep -qxF "${required_build_spec}" "${build_spec_file}" || \

@@ -36,6 +36,9 @@ for argument in \
   '--batch-size ${KEVINBELLM_LLAMA_BATCH_SIZE}' \
   '--ubatch-size ${KEVINBELLM_LLAMA_UBATCH_SIZE}' \
   '--threads ${KEVINBELLM_LLAMA_THREADS}' \
+  '--threads-batch ${KEVINBELLM_LLAMA_THREADS_BATCH}' \
+  '--poll ${KEVINBELLM_LLAMA_POLL}' \
+  '--poll-batch ${KEVINBELLM_LLAMA_POLL_BATCH}' \
   '--parallel ${KEVINBELLM_LLAMA_PARALLEL}' \
   '--n-gpu-layers ${KEVINBELLM_LLAMA_GPU_LAYERS}' \
   '--split-mode ${KEVINBELLM_LLAMA_SPLIT_MODE}' \
@@ -48,8 +51,11 @@ for argument in \
   '--no-mmproj' \
   '--no-webui' \
   '--no-slots' \
+  '--ctx-checkpoints ${KEVINBELLM_LLAMA_CTX_CHECKPOINTS}' \
+  '--cache-ram ${KEVINBELLM_LLAMA_CACHE_RAM}' \
   '--spec-type ${KEVINBELLM_LLAMA_SPEC_TYPE}' \
   '--spec-draft-n-max ${KEVINBELLM_LLAMA_SPEC_DRAFT_N_MAX}' \
+  '--spec-draft-p-min ${KEVINBELLM_LLAMA_SPEC_DRAFT_P_MIN}' \
   '--cache-reuse ${KEVINBELLM_LLAMA_CACHE_REUSE}'; do
   [[ "${standalone_exec}" == *"${argument}"* ]] || fail "ExecStart is missing ${argument}"
 done
@@ -60,6 +66,9 @@ for setting in \
   'Environment=KEVINBELLM_LLAMA_BATCH_SIZE=2048' \
   'Environment=KEVINBELLM_LLAMA_UBATCH_SIZE=512' \
   'Environment=KEVINBELLM_LLAMA_THREADS=8' \
+  'Environment=KEVINBELLM_LLAMA_THREADS_BATCH=8' \
+  'Environment=KEVINBELLM_LLAMA_POLL=50' \
+  'Environment=KEVINBELLM_LLAMA_POLL_BATCH=50' \
   'Environment=KEVINBELLM_LLAMA_PARALLEL=1' \
   'Environment=KEVINBELLM_LLAMA_GPU_LAYERS=all' \
   'Environment=KEVINBELLM_LLAMA_CACHE_TYPE_K=q8_0' \
@@ -67,6 +76,9 @@ for setting in \
   'Environment=KEVINBELLM_LLAMA_FLASH_ATTN=on' \
   'Environment=KEVINBELLM_LLAMA_SPEC_TYPE=draft-mtp' \
   'Environment=KEVINBELLM_LLAMA_SPEC_DRAFT_N_MAX=2' \
+  'Environment=KEVINBELLM_LLAMA_SPEC_DRAFT_P_MIN=0.0' \
+  'Environment=KEVINBELLM_LLAMA_CTX_CHECKPOINTS=8' \
+  'Environment=KEVINBELLM_LLAMA_CACHE_RAM=4096' \
   'Environment=KEVINBELLM_LLAMA_CUDA_DEVICES=0,1' \
   'Environment=KEVINBELLM_LLAMA_SPLIT_MODE=layer' \
   'Environment=KEVINBELLM_LLAMA_DEVICE_LIST=CUDA0,CUDA1' \
@@ -74,7 +86,6 @@ for setting in \
   'Environment=KEVINBELLM_LLAMA_CACHE_REUSE=0'; do
   require_text "${standalone_unit}" "${setting}"
 done
-
 require_text scripts/cluster/download-model.sh "preset='27b-iq4_xs'"
 require_text scripts/cluster/download-model.sh "model_repo='unsloth/Qwen3.8-27B-GGUF'"
 require_text scripts/cluster/download-model.sh "model_revision='4ca720788d1e01f1bff70c033e0d0028fd02e502'"
@@ -96,6 +107,22 @@ require_text scripts/cluster/install-services.sh 'LLAMA_MODEL_ALIAS must be kevi
 require_text scripts/cluster/install-services.sh 'Model file not found:'
 require_text scripts/cluster/install-llama-cpp.sh '-DGGML_RPC=OFF'
 require_text scripts/cluster/install-llama-cpp.sh "'GGML_RPC=OFF'"
+for optimized_build_setting in \
+  '-DGGML_CUDA_FA=ON' \
+  '-DGGML_CUDA_GRAPHS=ON' \
+  '-DGGML_SSE42=ON' \
+  '-DGGML_AVX=ON' \
+  '-DGGML_AVX2=OFF' \
+  '-DGGML_BMI2=OFF' \
+  '-DGGML_FMA=ON' \
+  '-DGGML_F16C=ON'; do
+  require_text scripts/cluster/install-llama-cpp.sh "${optimized_build_setting}"
+done
+require_text scripts/cluster/install-llama-cpp.sh "'-DCMAKE_C_FLAGS:STRING=-march=bdver2 -mno-lwp'"
+require_text scripts/cluster/install-llama-cpp.sh "'-DCMAKE_CXX_FLAGS:STRING=-march=bdver2 -mno-lwp'"
+require_text scripts/cluster/install-llama-cpp.sh '-DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=ON'
+require_text scripts/cluster/install-llama-cpp.sh "'/src/llama-sampler.cpp'"
+require_text scripts/cluster/install-llama-cpp.sh "'/src/llama-grammar.cpp'"
 require_text scripts/cluster/install-llama-cpp.sh 'for binary in llama-server llama-cli llama-bench; do'
 require_text scripts/cluster/install-llama-cpp.sh "'GGML_RPC:BOOL=ON'"
 require_text scripts/cluster/install-llama-cpp.sh '[[ ! -e "${build_dir}/bin/ggml-rpc-server" ]]'
