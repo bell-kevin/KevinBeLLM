@@ -10,7 +10,10 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly llama_ref='b10451'
 readonly llama_commit='10bf611e533d81f739128304991c5e133c6aebd8'
 readonly llama_repo='https://github.com/ggml-org/llama.cpp.git'
-install_dir="${HOME}/.local/opt/llama.cpp-${llama_ref}"
+# Keep the fixed-host build separate from pre-optimization and ad-hoc candidate
+# trees. Besides making rollback obvious, this prevents CMake from accepting a
+# cache whose absolute source/build paths belong to a relocated experiment.
+install_dir="${HOME}/.local/opt/llama.cpp-${llama_ref}-bdver2"
 jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '2')"
 
 usage() {
@@ -54,7 +57,10 @@ cluster_require_command nvcc
 
 nvidia-smi >/dev/null 2>&1 || cluster_die "NVIDIA driver/GPU check failed."
 [[ "$(nvcc --version)" =~ release[[:space:]]+([0-9]+)\. ]] || cluster_die "Could not parse the CUDA toolkit version."
-((BASH_REMATCH[1] >= 11)) || cluster_die "CUDA 11 or newer is required for compute capability 8.6."
+cuda_major="${BASH_REMATCH[1]}"
+((cuda_major >= 11)) || cluster_die "CUDA 11 or newer is required for compute capability 8.6."
+cuda_compiler="$(command -v nvcc)"
+cuda_compiler_real="$(readlink -f "${cuda_compiler}")"
 
 source_dir="${install_dir}/source"
 build_dir="${install_dir}/build"
@@ -100,15 +106,30 @@ cmake_args=(
   -B "${build_dir}"
   -G Ninja
   -DCMAKE_BUILD_TYPE=Release
-  -DCMAKE_CUDA_ARCHITECTURES=86
+  -DCMAKE_CUDA_ARCHITECTURES:STRING=86
+  -DCMAKE_CUDA_COMPILER="${cuda_compiler}"
+  # FX-8370 is GCC's bdver2 target, except this chip does not expose LWP.
+  # Global language flags are intentional: llama's grammar, sampler, vocab,
+  # tokenization, and Unicode translation units sit outside ggml-cpu.
+  '-DCMAKE_C_FLAGS:STRING=-march=bdver2 -mno-lwp'
+  '-DCMAKE_CXX_FLAGS:STRING=-march=bdver2 -mno-lwp'
+  -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=ON
   -DGGML_CUDA=ON
+  -DGGML_CUDA_FA=ON
+  -DGGML_CUDA_GRAPHS=ON
   -DGGML_NATIVE=OFF
   -DGGML_RPC=OFF
-  -DGGML_AVX=OFF
+  # Machine A's fixed Piledriver CPU supports SSE4.2, AVX, FMA, and F16C, but
+  # not AVX2 or BMI2. Spell out that exact ISA instead of either compiling a
+  # scalar CPU path or allowing CMake's generic x86 defaults to emit unsupported
+  # instructions. These options also keep ggml-cpu's own dispatch contract
+  # explicit instead of relying only on the global fixed-host compiler target.
+  -DGGML_SSE42=ON
+  -DGGML_AVX=ON
   -DGGML_AVX2=OFF
   -DGGML_BMI2=OFF
-  -DGGML_FMA=OFF
-  -DGGML_F16C=OFF
+  -DGGML_FMA=ON
+  -DGGML_F16C=ON
   -DBUILD_SHARED_LIBS=OFF
   -DLLAMA_BUILD_EXAMPLES=OFF
   -DLLAMA_BUILD_TESTS=OFF
@@ -119,6 +140,52 @@ cmake_args=(
 
 cluster_info "Configuring the pinned Ampere CUDA build"
 cmake "${cmake_args[@]}"
+cmake_cache="${build_dir}/CMakeCache.txt"
+for realized_setting in \
+  'CMAKE_BUILD_TYPE:STRING=Release' \
+  'CMAKE_CUDA_ARCHITECTURES:STRING=86' \
+  'CMAKE_C_FLAGS:STRING=-march=bdver2 -mno-lwp' \
+  'CMAKE_CXX_FLAGS:STRING=-march=bdver2 -mno-lwp' \
+  'CMAKE_EXPORT_COMPILE_COMMANDS:BOOL=ON' \
+  'GGML_CUDA:BOOL=ON' \
+  'GGML_CUDA_FA:BOOL=ON' \
+  'GGML_CUDA_GRAPHS:BOOL=ON' \
+  'GGML_NATIVE:BOOL=OFF' \
+  'GGML_RPC:BOOL=OFF' \
+  'GGML_SSE42:BOOL=ON' \
+  'GGML_AVX:BOOL=ON' \
+  'GGML_AVX2:BOOL=OFF' \
+  'GGML_BMI2:BOOL=OFF' \
+  'GGML_FMA:BOOL=ON' \
+  'GGML_F16C:BOOL=ON' \
+  'BUILD_SHARED_LIBS:BOOL=OFF' \
+  'LLAMA_BUILD_EXAMPLES:BOOL=OFF' \
+  'LLAMA_BUILD_TESTS:BOOL=OFF' \
+  'LLAMA_BUILD_UI:BOOL=OFF' \
+  'LLAMA_USE_PREBUILT_UI:BOOL=OFF' \
+  'LLAMA_OPENSSL:BOOL=OFF'; do
+  grep -qxF "${realized_setting}" "${cmake_cache}" || \
+    cluster_die "CMake did not realize required setting: ${realized_setting}"
+done
+realized_cuda_compiler="$(sed -n 's/^CMAKE_CUDA_COMPILER:[^=]*=//p' "${cmake_cache}")"
+[[ -n "${realized_cuda_compiler}" ]] || cluster_die "CMake did not record its CUDA compiler."
+[[ "$(readlink -f "${realized_cuda_compiler}")" == "${cuda_compiler_real}" ]] || \
+  cluster_die "CMake selected an unexpected CUDA compiler: ${realized_cuda_compiler}"
+compile_commands="${build_dir}/compile_commands.json"
+[[ -r "${compile_commands}" ]] || cluster_die "CMake did not export compile commands."
+for fixed_host_source in \
+  '/src/llama-sampler.cpp' \
+  '/src/llama-grammar.cpp' \
+  '/src/llama-vocab.cpp' \
+  '/src/unicode.cpp' \
+  '/common/sampling.cpp'; do
+  compile_command="$(grep -m 1 -F "${fixed_host_source}" "${compile_commands}" || true)"
+  [[ "${compile_command}" == *'-march=bdver2 -mno-lwp'* ]] || \
+    cluster_die "Fixed-host ISA flags did not reach ${fixed_host_source}."
+done
+cuda_compile_command="$(grep -m 1 -F '/fattn-vec-instance-f16-f16.cu' "${compile_commands}" || true)"
+[[ "${cuda_compile_command}" == *'--generate-code=arch=compute_86,code=[compute_86,sm_86]'* ]] || \
+  cluster_die "CUDA compile commands do not target compute_86/sm_86."
 cluster_info "Building llama-server, llama-cli, and llama-bench"
 cmake --build "${build_dir}" --parallel "${jobs}" --target llama-server llama-cli llama-bench
 
@@ -127,6 +194,10 @@ for binary in llama-server llama-cli llama-bench; do
 done
 [[ ! -e "${build_dir}/bin/ggml-rpc-server" ]] || \
   cluster_die "The RPC-disabled build unexpectedly produced ggml-rpc-server."
+linked_cudart_major="$(ldd "${build_dir}/bin/llama-server" | sed -n 's/.*libcudart\.so\.\([0-9][0-9]*\).*/\1/p' | head -n 1)"
+if [[ -n "${linked_cudart_major}" && "${linked_cudart_major}" != "${cuda_major}" ]]; then
+  cluster_die "CUDA toolkit/runtime mismatch: nvcc ${cuda_major}, libcudart ${linked_cudart_major}."
+fi
 
 {
   printf 'repository=%s\n' "${llama_repo}"
@@ -134,14 +205,22 @@ done
   printf 'commit=%s\n' "${llama_commit}"
   printf '%s\n' 'CMAKE_BUILD_TYPE=Release'
   printf '%s\n' 'CMAKE_CUDA_ARCHITECTURES=86'
+  printf 'CMAKE_CUDA_COMPILER=%s\n' "${cuda_compiler_real}"
+  printf 'CUDA_RUNTIME_MAJOR=%s\n' "${linked_cudart_major:-static}"
+  printf '%s\n' 'CMAKE_C_FLAGS=-march=bdver2 -mno-lwp'
+  printf '%s\n' 'CMAKE_CXX_FLAGS=-march=bdver2 -mno-lwp'
+  printf '%s\n' 'CMAKE_EXPORT_COMPILE_COMMANDS=ON'
   printf '%s\n' 'GGML_CUDA=ON'
+  printf '%s\n' 'GGML_CUDA_FA=ON'
+  printf '%s\n' 'GGML_CUDA_GRAPHS=ON'
   printf '%s\n' 'GGML_NATIVE=OFF'
   printf '%s\n' 'GGML_RPC=OFF'
-  printf '%s\n' 'GGML_AVX=OFF'
+  printf '%s\n' 'GGML_SSE42=ON'
+  printf '%s\n' 'GGML_AVX=ON'
   printf '%s\n' 'GGML_AVX2=OFF'
   printf '%s\n' 'GGML_BMI2=OFF'
-  printf '%s\n' 'GGML_FMA=OFF'
-  printf '%s\n' 'GGML_F16C=OFF'
+  printf '%s\n' 'GGML_FMA=ON'
+  printf '%s\n' 'GGML_F16C=ON'
   printf '%s\n' 'BUILD_SHARED_LIBS=OFF'
   printf '%s\n' 'LLAMA_BUILD_EXAMPLES=OFF'
   printf '%s\n' 'LLAMA_BUILD_TESTS=OFF'

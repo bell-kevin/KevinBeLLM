@@ -52,7 +52,7 @@ fi
   -f "${project_dir}/infra/search/compose.yaml" \
   --env-file "${project_dir}/infra/search/.env" \
   -p kevinbellm-search \
-  up --detach --build
+  up --detach --build --force-recreate
 
 wait_for_http \
   "SearXNG" \
@@ -73,12 +73,13 @@ wait_for_http \
 # so `up --remove-orphans assistant-web` tears down the live-tools container this
 # step just started and then fails its own depends_on, leaving nothing running.
 # Project-wide pruning stays in stop.sh, where `down --remove-orphans` names no
-# service and is safe.
+# service and is safe. Force recreation because Podman Compose does not reliably
+# replace a running container after `build` changes only its image contents.
 "${project_dir}/scripts/compose.sh" \
   -f "${project_dir}/compose.yaml" \
   --env-file "${project_dir}/.env" \
   -p kevinbellm \
-  up --detach live-tools
+  up --detach --force-recreate live-tools
 
 wait_for_http "Structured tools" "http://127.0.0.1:${tools_port}/health"
 
@@ -86,7 +87,7 @@ wait_for_http "Structured tools" "http://127.0.0.1:${tools_port}/health"
   -f "${project_dir}/compose.yaml" \
   --env-file "${project_dir}/.env" \
   -p kevinbellm \
-  up --detach assistant-web
+  up --detach --force-recreate assistant-web
 
 wait_for_http "KevinBeLLM" "http://127.0.0.1:${app_port}/health"
 

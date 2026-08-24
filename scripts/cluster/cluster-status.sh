@@ -57,6 +57,32 @@ if command -v curl >/dev/null 2>&1; then
 fi
 
 if command -v nvidia-smi >/dev/null 2>&1; then
-  nvidia-smi --query-gpu=name,utilization.gpu,memory.used,memory.total --format=csv,noheader || result=1
+  cluster_info "GPU clocks, power, negotiated PCIe links, utilization, and memory"
+  nvidia-smi \
+    --query-gpu=index,name,pstate,persistence_mode,temperature.gpu,power.draw,power.limit,clocks.current.sm,clocks.max.sm,pcie.link.gen.gpucurrent,pcie.link.gen.max,pcie.link.width.current,pcie.link.width.max,utilization.gpu,memory.used,memory.total \
+    --format=csv,noheader || result=1
+fi
+
+governors="$(cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null | sort -u || true)"
+if [[ -n "${governors}" ]]; then
+  cluster_info "CPU frequency governor(s): ${governors//$'\n'/,}"
+fi
+
+main_pid="$(systemctl --user show kevinbellm-llama.service -p MainPID --value 2>/dev/null || true)"
+if [[ "${main_pid}" =~ ^[1-9][0-9]*$ && -e "/proc/${main_pid}/exe" ]]; then
+  server_bin="$(readlink -f "/proc/${main_pid}/exe")"
+  install_dir="$(dirname -- "$(dirname -- "$(dirname -- "${server_bin}")")")"
+  build_spec="${install_dir}/KEVINBELLM_BUILD_SPEC.txt"
+  cmake_cache="$(dirname -- "$(dirname -- "${server_bin}")")/CMakeCache.txt"
+  cluster_info "Running llama-server: ${server_bin}"
+  if [[ -r "${build_spec}" ]]; then
+    cluster_info "Pinned build identity and performance contract"
+    sed -n '1,20p' "${build_spec}"
+  fi
+  if [[ -r "${cmake_cache}" ]]; then
+    cluster_info "Realized CMake performance flags"
+    grep -E '^(CMAKE_CUDA_ARCHITECTURES|GGML_(AVX|AVX2|BMI2|CUDA|CUDA_FA|CUDA_GRAPHS|F16C|FMA|NATIVE|RPC|SSE42)):' \
+      "${cmake_cache}" | sort
+  fi
 fi
 exit "${result}"
