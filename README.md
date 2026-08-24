@@ -59,22 +59,42 @@ from `unsloth/Qwen3.8-27B-GGUF`, pinned at immutable revision
 14,252,845,984-byte size and SHA-256, with mismatched files refused. It occupies
 13.27 GiB and is layer-split `--tensor-split 64,36` across the two cards.
 
-At the application's current temperature of 0.3, the tuning corpus on the normal
-tool-capable sampling path generated roughly 22-27 tokens/second, with a median
-near 24. The spread follows how predictable the output is rather than how long
-it is: code drafts well at about 26 tokens/second while discursive prose and
-factual answers sit near 23. Fast mode uses a different sampling path and is
-benchmarked below. Speculative draft depth was swept over 1, 2, 3, 4, and 6;
-depth 2 is the peak at 24.3 and depth 6 collapses to 17.6. Prefill runs at about
-595 tokens/second on a short prompt and 470 at 8k. These are measurements from
-this deployment, not guarantees or a benchmark harness shipped with the source.
+The checked-in fixed-corpus benchmark runs the application's temperature 0.3
+sampling with a fixed seed, one warm-up, three measured repetitions, and exactly
+128 output tokens per request. Rebuilding llama.cpp for the FX-8370's actual
+`bdver2` ISA (with its unavailable LWP instruction explicitly disabled) raised
+the tool-schema path's median decode from 27.90 to 29.00 tokens/second (+4.0%).
+The already GPU-sampled Fast path remained effectively flat at 34.38 to 34.53
+tokens/second (+0.4%). Short-prompt prefill improved 6.6-7.4%; a cold 14,879-token
+prompt remains about 466 tokens/second. Output hashes were identical across the
+baseline and optimized builds. These are measurements from this deployment,
+not guarantees for another host.
 
-Time to first token is about 1.6 s for a short prompt. A cold 8.4k-token prompt
-costs about 18 s, but that is a worst case rather than the usual one: llama.cpp
-reuses the cached prefix, so the next turn of the same conversation starts in
-about 3.8 s and an unchanged prompt in about 1.6 s. The system prompt therefore
-stamps only the UTC *date*; a per-request timestamp there would invalidate the
-whole prefix on every turn and silently reintroduce the cold cost.
+Speculative draft depth was separately swept over 1, 2, 3, 4, and 6; depth 2 is
+the peak, while deeper drafts lose badly on this model. Raising the draft
+probability threshold also reduced both sampling paths, so the service retains
+`--spec-draft-n-max 2 --spec-draft-p-min 0`.
+
+Time to first token is about 1.6 s for a short prompt. A cold long prompt is the
+worst case rather than the usual one: `--ctx-checkpoints 8 --cache-ram 4096`
+restored 8,249 tokens of an 8.3k-token divergent prefix and reduced measured
+time to first token from about 17.3 s to 1.8-1.9 s. Eight checkpoints matched 32,
+and the 4 GiB state cache matched an 8 GiB cache on the alternating-prompt
+probe. The system prompt therefore stamps only the UTC *date*; a per-request
+timestamp there would invalidate the reusable prefix on every turn.
+
+Run the same sequential Fast and tool-schema corpus through an SSH-forwarded
+loopback endpoint with:
+
+```bash
+python3 scripts/cluster/benchmark-inference.py \
+  --base-url http://127.0.0.1:18080
+```
+
+The harness rejects incomplete output and unexpected prompt-cache hits, reports
+time to first token, prefill/decode rates, MTP acceptance, and output hashes, and
+can emit JSON for before/after comparisons. Use `--help` for long-context and
+explicit cache-reuse probes.
 
 The KV cache is `q8_0` rather than `f16`. This model spends 0.25 MiB per token of
 KV, so 32,768 tokens of `f16` would need 8 GiB on top of the weights and does not
@@ -179,6 +199,11 @@ on the GPUs. On the deployed host, a fixed-seed 256-token probe improved from
 23.13 to 34.24 tokens/s (48%) with identical output. Leave it off when an answer
 needs current web, news, weather, or model data; tool schemas require a grammar,
 which llama.cpp currently samples on the CPU.
+
+The Zoo Code gateway now selects the same GPU sampling path automatically for
+plain-text requests with no active tool or JSON grammar, including requests
+that explicitly set `tool_choice: "none"`. Native tool-call requests retain the
+grammar-capable CPU sampling path.
 
 With Fast off, the bounded tool loop can search the web and news, fetch a public
 page, get current weather, and discover Hugging Face models. Its deployed limits

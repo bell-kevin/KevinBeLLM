@@ -14,6 +14,7 @@ from starlette.requests import ClientDisconnect
 from app.config import Settings
 from app.database import Database
 from app.main import ManagedStreamingResponse, RequestBodyLimitMiddleware, create_app
+from app.openai_gateway import validate_chat_body
 from app.security import hash_password, verify_password
 
 
@@ -395,6 +396,48 @@ def test_zoo_streamed_native_tool_calls_round_trip(tmp_path, monkeypatch) -> Non
         assert sent["parallel_tool_calls"] is True
         assert sent["parse_tool_calls"] is True
         assert sent["max_tokens"] == 8_192
+        assert "backend_sampling" not in sent
+
+
+def test_zoo_uses_backend_sampling_only_for_unconstrained_text(tmp_path) -> None:
+    settings = _settings(tmp_path)
+    base = {
+        "model": "kevinbellm-27b",
+        "messages": [{"role": "user", "content": "Hello"}],
+    }
+
+    plain = validate_chat_body(base, settings)
+    assert plain["backend_sampling"] is True
+
+    tool = {
+        "type": "function",
+        "function": {
+            "name": "lookup",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    }
+    constrained_by_tools = validate_chat_body(
+        {**base, "tools": [tool], "tool_choice": "auto"}, settings
+    )
+    assert "backend_sampling" not in constrained_by_tools
+
+    tools_explicitly_disabled = validate_chat_body(
+        {
+            **base,
+            "tools": [tool],
+            "tool_choice": "none",
+            "parallel_tool_calls": True,
+        },
+        settings,
+    )
+    assert tools_explicitly_disabled["backend_sampling"] is True
+    assert "tools" not in tools_explicitly_disabled
+    assert "parallel_tool_calls" not in tools_explicitly_disabled
+
+    constrained_by_json = validate_chat_body(
+        {**base, "response_format": {"type": "json_object"}}, settings
+    )
+    assert "backend_sampling" not in constrained_by_json
 
 
 def test_stream_close_failure_still_releases_every_slot(tmp_path, monkeypatch) -> None:
@@ -494,6 +537,7 @@ def test_nonstream_tool_result_and_request_controls(tmp_path, monkeypatch) -> No
         assert isinstance(sent, dict)
         assert sent["max_tokens"] == 1024
         assert "max_completion_tokens" not in sent
+        assert sent["backend_sampling"] is True
 
         assert client.post(
             "/v1/chat/completions",
