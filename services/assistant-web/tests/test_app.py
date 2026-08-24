@@ -7,7 +7,7 @@ import sqlite3
 from fastapi.testclient import TestClient
 
 from app.config import Settings
-from app.main import create_app
+from app.main import _close_event_queue, create_app
 
 
 def _settings(tmp_path) -> Settings:
@@ -32,6 +32,54 @@ def _settings(tmp_path) -> Settings:
         fetch_deadline_seconds=5,
         database_concurrency=2,
     )
+
+
+def test_cancelled_stream_worker_terminates_a_full_live_queue() -> None:
+    async def exercise() -> None:
+        queue: asyncio.Queue[object] = asyncio.Queue(maxsize=2)
+        queue.put_nowait(("delta", {"content": "obsolete one"}))
+        queue.put_nowait(("delta", {"content": "obsolete two"}))
+        started = asyncio.Event()
+
+        async def worker() -> None:
+            try:
+                started.set()
+                await asyncio.Event().wait()
+            finally:
+                await _close_event_queue(queue)
+
+        task = asyncio.create_task(worker())
+        await started.wait()
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+        assert queue.qsize() == 1
+        assert await asyncio.wait_for(queue.get(), timeout=0.1) is None
+
+    asyncio.run(exercise())
+
+
+def test_stream_worker_cancelled_while_waiting_to_terminate_still_closes() -> None:
+    async def exercise() -> None:
+        queue: asyncio.Queue[object] = asyncio.Queue(maxsize=1)
+        queue.put_nowait(("delta", {"content": "obsolete"}))
+        task = asyncio.create_task(_close_event_queue(queue))
+        await asyncio.sleep(0)
+        assert not task.done()
+
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+        assert queue.qsize() == 1
+        assert await asyncio.wait_for(queue.get(), timeout=0.1) is None
+
+    asyncio.run(exercise())
 
 
 def test_login_session_csrf_models_and_chat(tmp_path, monkeypatch) -> None:

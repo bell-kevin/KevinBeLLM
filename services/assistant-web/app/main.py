@@ -45,6 +45,36 @@ MAX_REQUEST_BYTES = 128 * 1024
 UPSTREAM_CLOSE_TIMEOUT_SECONDS = 5
 
 
+async def _close_event_queue(queue: asyncio.Queue[Any]) -> None:
+    """Terminate an SSE queue without making cancellation wait on its consumer."""
+    def replace_buffer_with_terminator() -> None:
+        # Cancellation can mean either a disconnected client (no consumer) or
+        # application-initiated session/token revocation (a live consumer). In
+        # both cases discard now-obsolete buffered deltas and leave an immediate
+        # terminator. Awaiting space would deadlock the disconnected case, while
+        # omitting the terminator makes the still-connected case heartbeat forever.
+        while True:
+            try:
+                queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+        queue.put_nowait(None)
+
+    current_task = asyncio.current_task()
+    if current_task is not None and current_task.cancelling():
+        replace_buffer_with_terminator()
+        return
+    # A normal producer must not drop its terminator merely because a slow
+    # connected client has filled the bounded queue.
+    try:
+        await queue.put(None)
+    except asyncio.CancelledError:
+        # Cancellation may arrive after the normal path has already blocked on
+        # a full queue, so re-checking only at function entry is insufficient.
+        replace_buffer_with_terminator()
+        raise
+
+
 class OpenAIHTTPException(Exception):
     def __init__(
         self,
@@ -943,8 +973,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
             finally:
                 request.app.state.chat_admission.release()
-                with suppress(asyncio.QueueFull):
-                    queue.put_nowait(None)
+                await _close_event_queue(queue)
 
         async def event_stream() -> AsyncIterator[str]:
             task = asyncio.create_task(worker())

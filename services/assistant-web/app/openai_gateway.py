@@ -276,18 +276,6 @@ def validate_chat_body(payload: Any, settings: Settings) -> dict[str, Any]:
     tools = payload.get("tools")
     if tools is not None:
         result["tools"] = _validate_tools(tools)
-    prompt_bytes = _serialized_bytes(result["messages"])
-    if tools is not None:
-        prompt_bytes += _serialized_bytes(result["tools"])
-    # This deliberately lenient byte-to-token estimate is not a tokenizer. It is
-    # an aggregate safety ceiling that prevents individually valid messages and
-    # tool schemas from consuming unbounded context together.
-    input_token_budget = max(1, settings.zoo_context_window - supplied_max)
-    if prompt_bytes > input_token_budget * 8:
-        raise GatewayRequestError(
-            "The combined messages and tools exceed the configured context budget",
-            param="messages",
-        )
     if "parallel_tool_calls" in payload:
         if not isinstance(payload["parallel_tool_calls"], bool):
             raise GatewayRequestError(
@@ -311,6 +299,29 @@ def validate_chat_body(payload: Any, settings: Settings) -> dict[str, Any]:
             raise GatewayRequestError("tool_choice is invalid", param="tool_choice")
         result["tool_choice"] = choice
 
+    # tool_choice=none means the schemas are semantically inactive. Do not make
+    # llama.cpp inject them into the chat template (wasting prefill/context and
+    # advertising functions the model cannot call) merely because the client
+    # included its reusable tool catalog. parallel_tool_calls is also meaningless
+    # whenever there is no active schema.
+    if result.get("tool_choice") == "none":
+        result.pop("tools", None)
+    if "tools" not in result:
+        result.pop("parallel_tool_calls", None)
+
+    prompt_bytes = _serialized_bytes(result["messages"])
+    if "tools" in result:
+        prompt_bytes += _serialized_bytes(result["tools"])
+    # This deliberately lenient byte-to-token estimate is not a tokenizer. It is
+    # an aggregate safety ceiling that prevents individually valid messages and
+    # active tool schemas from consuming unbounded context together.
+    input_token_budget = max(1, settings.zoo_context_window - supplied_max)
+    if prompt_bytes > input_token_budget * 8:
+        raise GatewayRequestError(
+            "The combined messages and tools exceed the configured context budget",
+            param="messages",
+        )
+
     if "response_format" in payload:
         response_format = payload["response_format"]
         if not isinstance(response_format, dict) or response_format.get("type") not in {
@@ -329,6 +340,15 @@ def validate_chat_body(payload: Any, settings: Settings) -> dict[str, Any]:
     result["reasoning_effort"] = "none"
     result["parse_tool_calls"] = True
     result["chat_template_kwargs"] = {"enable_thinking": False}
+    # A tool or JSON response schema creates a grammar, and llama.cpp currently
+    # has to sample grammar-constrained output on the CPU. Plain text has no such
+    # constraint, so keep sampling on the CUDA backend just as browser Fast mode
+    # does. This is an internal optimization: clients still cannot inject raw
+    # llama.cpp control fields through the gateway.
+    response_type = result.get("response_format", {}).get("type", "text")
+    tools_disabled = "tools" not in result
+    if tools_disabled and response_type == "text":
+        result["backend_sampling"] = True
     return result
 
 
