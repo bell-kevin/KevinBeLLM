@@ -220,7 +220,10 @@ grammar-capable CPU sampling path.
 
 With Fast off, the bounded tool loop can search the web and news, fetch a public
 page, get current weather, and discover Hugging Face models. Its deployed limits
-are 12 calls over 8 rounds. Tool use sends queries or URLs to public upstream
+are 20 calls over 12 rounds (`MAX_TOOL_CALLS`, `MAX_TOOL_ROUNDS`), set above the
+6-11 calls measured on representative research questions so a harder one is not
+cut off mid-investigation; a question that finishes sooner pays nothing for the
+headroom. Tool use sends queries or URLs to public upstream
 services, then feeds their returned data into local inference. Conversation
 history is retained only in the signed-in browser's memory; a bounded history is
 sent with each chat request, and the app does not persist transcripts in its
@@ -233,12 +236,22 @@ citation card. The renderer is a deferred script that degrades safely: if it
 fails to load, answers remain readable as the plain streamed text and the
 citation card is dropped rather than rendered through an unvetted URL check.
 
-Qwen3.8's extended thinking is off by default and enabled per request with the
-`Think` toggle, which is slower to start and better on hard questions. When it
-is on, the thinking text streams into a collapsible block above the answer.
-Each non-Think llama.cpp completion is capped at 2,048 output tokens and each
-Think completion at 8,192. A tool-enabled browser request can invoke several
-completions across the bounded loop. The llama.cpp context is 32,768 tokens.
+Qwen3.8's extended thinking is **on** by default, because the published
+intelligence score for this model is its non-thinking number and the evaluations
+it is weakest on are the ones thinking helps most. The `Think` toggle turns it
+off per request for answer-first latency, and `DEFAULT_REASONING=false` restores
+the old opt-in behaviour for every client at once. When thinking is on, the text
+streams into a collapsible block above the answer; it is never stored and never
+fed back to the model, so it costs latency but not context.
+
+Each non-Think llama.cpp completion is capped at 4,096 output tokens and each
+Think completion at 12,288 (`ANSWER_MAX_TOKENS` and `REASONING_MAX_TOKENS`).
+These are ceilings, not targets: the model stops at its own stop token, so a
+larger budget costs nothing on answers that never reach it and only removes
+mid-sentence truncation on long code and multi-part analysis. A tool-enabled
+browser request can invoke several completions across the bounded loop. The
+llama.cpp context is 32,768 tokens, which the 12,288-token Think ceiling shares
+with the prompt, leaving about 20,480 tokens of prompt room.
 Typical requests fit, but the app bounds browser history by 48,000 characters
 rather than pre-tokenizing it, so an unusually token-dense history is not
 guaranteed to fit the model context.
