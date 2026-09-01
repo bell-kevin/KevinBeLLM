@@ -142,8 +142,21 @@ To open a laptop-local UI tunnel without publishing a LAN port:
 .\scripts\windows\Open-KevinBeLLMForward.ps1
 ```
 
+For daily Zoo Code use, install the per-user automatic forward once:
+
+```powershell
+.\scripts\windows\Install-KevinBeLLMAutoForward.ps1
+```
+
+It starts in the background at Windows logon, reconnects after network or sleep
+interruptions, and stores no SSH password or Zoo API token. Check it with
+`Get-KevinBeLLMAutoForwardStatus.ps1`; remove it with
+`Uninstall-KevinBeLLMAutoForward.ps1`. The task runs without elevation and
+references this checkout by absolute path, so rerun the installer if the
+repository moves.
+
 Then visit <http://127.0.0.1:3000>. Direct forwarding of the llama API is
-available only as an explicit diagnostics option:
+available only as an explicit foreground diagnostics option:
 
 ```powershell
 .\scripts\windows\Open-KevinBeLLMForward.ps1 -ForwardLlamaApi

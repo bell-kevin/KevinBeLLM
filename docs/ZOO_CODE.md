@@ -40,6 +40,27 @@ http://127.0.0.1:3000/v1
 Do **not** add `-ForwardLlamaApi`, and do not use port 18080. That diagnostic
 forward reaches raw llama.cpp and bypasses KevinBeLLM authentication.
 
+To make the private forward automatic, install its per-user Windows logon task
+once from the repository root:
+
+```powershell
+.\scripts\windows\Install-KevinBeLLMAutoForward.ps1
+```
+
+The task starts a hidden, loopback-only forward at sign-in and reconnects after
+Wi-Fi changes, sleep, or temporary server unavailability. It runs as the current
+user without elevation, uses the existing key and pinned SSH host identity, and
+stores no password or KevinBeLLM/Zoo token. The server must already accept the
+key without an interactive prompt. Inspect it with:
+
+```powershell
+.\scripts\windows\Get-KevinBeLLMAutoForwardStatus.ps1
+```
+
+Remove it with `Uninstall-KevinBeLLMAutoForward.ps1`. The scheduled action
+references this checkout by absolute path; rerun the installer after moving the
+repository. The foreground command remains useful for one-off diagnostics.
+
 ### Remote Cloudflare path
 
 An interactive Cloudflare Access application redirects non-browser clients to a
@@ -124,7 +145,7 @@ access** page:
 | Max Output Tokens | `8192` |
 | Image Support | Off (actively turn this off; Zoo defaults it on) |
 | Prompt Caching | Off |
-| Enable Reasoning Effort | Off |
+| Enable Reasoning Effort | Off unless the server sets `ZOO_ENABLE_THINKING` |
 | Enable streaming | On |
 | Include max output tokens | On |
 
@@ -132,6 +153,38 @@ Zoo's Model picker initially defaults to `gpt-4o`. After entering the Base URL
 and API Key, explicitly choose the authenticated model returned by KevinBeLLM.
 If it is not listed, type the exact displayed ID into Model search and select
 **Use custom**. Leaving `gpt-4o` selected correctly produces `404 model_not_found`.
+
+### Reasoning effort
+
+Zoo's Enable Reasoning Effort control offers a graded scale (low through max),
+but Qwen3.8 has no such scale: its chat template exposes thinking as the boolean
+`enable_thinking`, the same on/off state as the browser assistant's **Think**
+toggle. The gateway therefore treats every level as one request. Picking `low`
+and picking `max` send exactly the same thing upstream, and the level is dropped
+rather than forwarded, because there is nothing upstream for it to vary.
+
+Thinking is off by default for Zoo and any non-`none` level is refused with a
+400. Set `ZOO_ENABLE_THINKING=true` in the private root `.env` on the server and
+redeploy `assistant-web` to allow it. Leaving it unset keeps current behaviour.
+
+Turning it on is not recommended for agent work. The model is an unusually
+verbose reasoner, which is why the browser raises its cap to 8,192 tokens in
+Think mode; a coding turn that spends most of that budget thinking can fail to
+emit its tool call at all. The browser survives this because the server owns
+that loop and can bound the tool rounds, force a final answer, and strip leaked
+tool markup. Zoo owns its own loop and gets none of those guardrails, and the
+thinking text arrives on the non-standard `reasoning_content` field, which an
+OpenAI-compatible client may not render. If you do enable it, raise
+`ZOO_MAX_OUTPUT_TOKENS` (up to 16,384) so thinking does not consume the whole
+answer budget, and watch the 32,768-token context, which Zoo already shares
+between tool schemas, file contents, and conversation history.
+
+`ZOO_MAX_OUTPUT_TOKENS` is a server-side ceiling, and Zoo's own **Max Output
+Tokens** field is what the client actually sends. Raise the server first: a
+client value above the ceiling is refused with `400 Output tokens must be
+between 1 and <ceiling>`. After redeploying, the **Zoo Code access** page shows
+the new ceiling to copy into Zoo. Raising the ceiling also spends context that
+input can no longer use, because output and input share the same 32,768 tokens.
 
 For the remote Cloudflare path, also add the two per-device Service Auth headers
 described above. Do not place the KevinBeLLM token in a custom header; the API Key
@@ -167,9 +220,12 @@ tools on the VS Code computer, and repository text can contain prompt injection.
 - **401 `invalid_api_key`:** the KevinBeLLM token is missing, expired, malformed,
   or revoked. Sign in on the web and create a replacement.
 - **404 `model_not_found`:** use the exact model ID displayed by KevinBeLLM.
-- **400 tool/request error:** turn Image Support off, keep Prompt Caching and
-  Enable Reasoning Effort off, and use OpenAI-compatible native tools. Arbitrary llama.cpp fields
-  are intentionally rejected.
+- **400 tool/request error:** turn Image Support off, keep Prompt Caching off, and
+  use OpenAI-compatible native tools. Arbitrary llama.cpp fields are intentionally
+  rejected.
+- **400 on `reasoning_effort`:** the deployment has thinking turned off. Either
+  clear Enable Reasoning Effort in Zoo or set `ZOO_ENABLE_THINKING` on the server.
+  See [Reasoning effort](#reasoning-effort).
 - **429:** the account rate limit was reached.
 - **503:** the one-slot local GPU queue is busy; retry after the supplied delay.
 

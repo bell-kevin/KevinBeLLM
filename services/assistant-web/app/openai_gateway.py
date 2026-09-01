@@ -331,15 +331,26 @@ def validate_chat_body(payload: Any, settings: Settings) -> dict[str, Any]:
             raise GatewayRequestError("response_format is invalid", param="response_format")
         result["response_format"] = {"type": response_format["type"]}
 
+    # Qwen3.8 exposes thinking as the boolean `enable_thinking`, not as OpenAI's
+    # graded scale, so every level a client can send means the same thing. Any
+    # value other than "none" turns thinking on and the level itself is dropped
+    # rather than forwarded, because upstream has nothing to vary with it.
     effort = payload.get("reasoning_effort", "none")
-    if effort != "none":
+    if not _bounded_string(effort, 32):
         raise GatewayRequestError(
-            "Reasoning level is not supported for this Zoo Code profile; disable it",
+            "reasoning_effort is invalid", param="reasoning_effort"
+        )
+    thinking = effort != "none"
+    if thinking and not settings.zoo_enable_thinking:
+        raise GatewayRequestError(
+            "Reasoning is turned off for this deployment; disable it in the client "
+            "or set ZOO_ENABLE_THINKING on the server",
             param="reasoning_effort",
         )
-    result["reasoning_effort"] = "none"
     result["parse_tool_calls"] = True
-    result["chat_template_kwargs"] = {"enable_thinking": False}
+    if not thinking:
+        result["reasoning_effort"] = "none"
+        result["chat_template_kwargs"] = {"enable_thinking": False}
     # A tool or JSON response schema creates a grammar, and llama.cpp currently
     # has to sample grammar-constrained output on the CPU. Plain text has no such
     # constraint, so keep sampling on the CUDA backend just as browser Fast mode
