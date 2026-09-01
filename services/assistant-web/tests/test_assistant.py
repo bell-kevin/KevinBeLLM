@@ -215,7 +215,7 @@ def test_llamacpp_chat_completion_is_normalized(tmp_path) -> None:
     assert len(requests) == 1
     assert requests[0]["model"] == "test-model"
     assert requests[0]["stream"] is True
-    assert requests[0]["max_tokens"] == 2_048
+    assert requests[0]["max_tokens"] == 4_096
     assert requests[0]["temperature"] == 0.3
     assert "backend_sampling" not in requests[0]
     assert requests[0]["reasoning_effort"] == "none"
@@ -513,7 +513,7 @@ def test_reasoning_is_opt_in_and_never_enters_the_answer(tmp_path) -> None:
     assert content == "Paris"
     assert requests[-1]["reasoning_effort"] == "none"
     assert requests[-1]["chat_template_kwargs"] == {"enable_thinking": False}
-    assert requests[-1]["max_tokens"] == 2_048
+    assert requests[-1]["max_tokens"] == 4_096
     # Even though the server sent reasoning, fast mode must not surface it.
     assert not [event for event, _ in events if event == "reasoning"]
 
@@ -522,7 +522,7 @@ def test_reasoning_is_opt_in_and_never_enters_the_answer(tmp_path) -> None:
     assert content == "Paris"
     assert "reasoning_effort" not in requests[-1]
     assert "chat_template_kwargs" not in requests[-1]
-    assert requests[-1]["max_tokens"] == 8_192
+    assert requests[-1]["max_tokens"] == 12_288
     thoughts = [p["content"] for e, p in events if e == "reasoning"]
     assert thoughts == ["weighing ", "options"]
     # The stored answer must contain no chain-of-thought.

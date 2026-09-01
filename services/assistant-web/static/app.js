@@ -78,7 +78,8 @@
     timeoutFired: false,
     passwordBusy: false,
     fast: false,
-    reasoning: false,
+    // Mirrors DEFAULT_REASONING on the server: thinking is on unless turned off.
+    reasoning: true,
   };
 
   function setComposerHint(text) {
@@ -335,8 +336,10 @@
         state.fast = false;
         elements.fastToggle.setAttribute("aria-checked", "false");
         elements.fastToggle.classList.remove("is-on");
-        updateModeHint();
       }
+      // Thinking is on by default, so its latency note has to render on load and
+      // not only when a toggle is clicked or fast mode happens to be unavailable.
+      updateModeHint();
       elements.modelSelect.replaceChildren();
 
       if (state.models.length === 0) {
