@@ -21,6 +21,18 @@ def _bounded_int(name: str, default: int, minimum: int, maximum: int) -> int:
     return value
 
 
+def _bool_env(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    value = raw.strip().casefold()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    raise RuntimeError(f"{name} must be a boolean")
+
+
 def _http_url(name: str, default: str, *, loopback_only: bool = False) -> str:
     value = os.getenv(name, default).strip().rstrip("/")
     parsed = urlsplit(value)
@@ -101,6 +113,7 @@ class Settings:
     api_token_ttl_seconds: int = 30 * 24 * 3600
     zoo_max_output_tokens: int = 8_192
     zoo_context_window: int = 32_768
+    zoo_enable_thinking: bool = False
 
     def __post_init__(self) -> None:
         if self.zoo_max_output_tokens >= self.zoo_context_window:
@@ -174,6 +187,7 @@ def load_settings() -> Settings:
         zoo_context_window=_bounded_int(
             "ZOO_CONTEXT_WINDOW", 32_768, 4_096, 262_144
         ),
+        zoo_enable_thinking=_bool_env("ZOO_ENABLE_THINKING", False),
     )
 
 

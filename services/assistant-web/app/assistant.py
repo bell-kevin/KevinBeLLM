@@ -34,14 +34,38 @@ def _bounded_env_int(name: str, default: int, minimum: int, maximum: int) -> int
     return value
 
 
+def _env_flag(name: str, default: bool) -> bool:
+    """Read a boolean knob, falling back to the deployed default."""
+    raw = os.getenv(name, "").strip().casefold()
+    if not raw:
+        return default
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    raise RuntimeError(f"{name} must be a boolean")
+
+
+# Extended thinking is the largest remaining quality lever on this deployment: the
+# published index score for this model is its *non-thinking* number, and the
+# evaluations it is weakest on are the ones thinking helps most. It is therefore the
+# default rather than an opt-in, and the composer toggle now turns it off rather
+# than on. Set DEFAULT_REASONING=false to restore answer-first latency everywhere.
+DEFAULT_REASONING = _env_flag("DEFAULT_REASONING", True)
+
+
 # Measured against the deployed model with stub tool results: it issues two calls
 # per round and wants 6, 10, and 11 calls over 4-6 rounds for three representative
 # research questions, stopping on its own each time. The previous cap of 6 calls
-# therefore truncated two of those three before the model was finished. 12 covers
-# everything observed with headroom; the extra rounds cost roughly 6-10 s each,
-# which only questions that actually call tools ever pay.
-MAX_TOOL_CALLS = _bounded_env_int("MAX_TOOL_CALLS", 12, 1, 24)
-MAX_TOOL_ROUNDS = _bounded_env_int("MAX_TOOL_ROUNDS", 8, 1, 16)
+# therefore truncated two of those three before the model was finished.
+#
+# The ceiling now sits well above that observed range rather than just above it.
+# Research questions harder than the three that were measured are exactly the ones
+# a tight cap truncates, and a cap only costs anything on the turns that reach it:
+# a question that finishes in 11 calls pays nothing for a limit of 20. The extra
+# rounds cost roughly 6-10 s each, which only questions that call tools ever pay.
+MAX_TOOL_CALLS = _bounded_env_int("MAX_TOOL_CALLS", 20, 1, 24)
+MAX_TOOL_ROUNDS = _bounded_env_int("MAX_TOOL_ROUNDS", 12, 1, 16)
 TOOL_PARALLELISM = 4
 MAX_ASSISTANT_CHARS = 50_000
 
@@ -78,9 +102,19 @@ OnDelta = Callable[[str], Awaitable[None]]
 
 # Fast mode answers directly. Reasoning mode needs a much larger budget: this
 # model is an unusually verbose reasoner and will otherwise spend the whole
-# allowance thinking and never emit a visible answer. Both fit the 32k context.
-ANSWER_MAX_TOKENS = 2_048
-REASONING_MAX_TOKENS = 8_192
+# allowance thinking and never emit a visible answer.
+#
+# Both are ceilings, not targets: the model stops at its own stop token, so a
+# larger budget costs nothing on the answers that never reach it and only removes
+# mid-sentence truncation on the ones that do. Long code and multi-part analysis
+# are precisely what 2,048 was cutting off.
+#
+# Both must still fit the 32k context alongside the prompt. The composer bounds a
+# conversation at 48,000 characters (roughly 12-16k tokens), so 12,288 reasoning
+# tokens leaves about 20k for the prompt, and the reasoning budget must stay under
+# that ceiling however these are tuned.
+ANSWER_MAX_TOKENS = _bounded_env_int("ANSWER_MAX_TOKENS", 4_096, 256, 8_192)
+REASONING_MAX_TOKENS = _bounded_env_int("REASONING_MAX_TOKENS", 12_288, 1_024, 20_480)
 
 
 def _strip_tool_syntax(text: str) -> str:

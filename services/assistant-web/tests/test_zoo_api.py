@@ -14,7 +14,7 @@ from starlette.requests import ClientDisconnect
 from app.config import Settings
 from app.database import Database
 from app.main import ManagedStreamingResponse, RequestBodyLimitMiddleware, create_app
-from app.openai_gateway import validate_chat_body
+from app.openai_gateway import GatewayRequestError, validate_chat_body
 from app.security import hash_password, verify_password
 
 
@@ -438,6 +438,47 @@ def test_zoo_uses_backend_sampling_only_for_unconstrained_text(tmp_path) -> None
         {**base, "response_format": {"type": "json_object"}}, settings
     )
     assert "backend_sampling" not in constrained_by_json
+
+
+def test_zoo_thinking_is_opt_in_and_level_independent(tmp_path) -> None:
+    settings = _settings(tmp_path)
+    base = {
+        "model": "kevinbellm-27b",
+        "messages": [{"role": "user", "content": "Hello"}],
+    }
+
+    # Default deployment: thinking stays off and is forced off upstream.
+    assert settings.zoo_enable_thinking is False
+    off = validate_chat_body(base, settings)
+    assert off["reasoning_effort"] == "none"
+    assert off["chat_template_kwargs"] == {"enable_thinking": False}
+    with pytest.raises(GatewayRequestError) as rejected:
+        validate_chat_body({**base, "reasoning_effort": "low"}, settings)
+    assert rejected.value.param == "reasoning_effort"
+
+    enabled = replace(settings, zoo_enable_thinking=True)
+
+    # An absent field still means off, so existing clients are unaffected.
+    still_off = validate_chat_body(base, enabled)
+    assert still_off["reasoning_effort"] == "none"
+    assert still_off["chat_template_kwargs"] == {"enable_thinking": False}
+    assert validate_chat_body({**base, "reasoning_effort": "none"}, enabled) == still_off
+
+    # Qwen3.8 has no graded scale, so every level is the same request upstream
+    # and the level itself is never forwarded.
+    for level in ("minimal", "low", "medium", "high", "max"):
+        on = validate_chat_body({**base, "reasoning_effort": level}, enabled)
+        assert "reasoning_effort" not in on
+        assert "chat_template_kwargs" not in on
+        assert on == validate_chat_body({**base, "reasoning_effort": "high"}, enabled)
+
+    with pytest.raises(GatewayRequestError) as invalid:
+        validate_chat_body({**base, "reasoning_effort": "x" * 33}, enabled)
+    assert invalid.value.param == "reasoning_effort"
+
+    with pytest.raises(GatewayRequestError) as wrong_type:
+        validate_chat_body({**base, "reasoning_effort": 3}, enabled)
+    assert wrong_type.value.param == "reasoning_effort"
 
 
 def test_stream_close_failure_still_releases_every_slot(tmp_path, monkeypatch) -> None:

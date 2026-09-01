@@ -16,7 +16,12 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from .assistant import AssistantError, installed_models, run_chat
+from .assistant import (
+    DEFAULT_REASONING,
+    AssistantError,
+    installed_models,
+    run_chat,
+)
 from .config import STATIC_DIR, Settings, load_settings
 from .database import Database, User
 from .openai_gateway import (
@@ -364,9 +369,11 @@ class ChatBody(BaseModel):
 
     model: str = Field(min_length=1, max_length=200)
     messages: list[ChatMessage] = Field(min_length=1, max_length=32)
-    # Opt-in per request. Thinking measurably raises answer quality but costs
-    # hundreds to thousands of extra tokens before any visible text appears.
-    reasoning: bool = False
+    # On by default, and still overridable per request. Thinking measurably raises
+    # answer quality but costs hundreds to thousands of extra tokens before any
+    # visible text appears, so the composer exposes it as a toggle and
+    # DEFAULT_REASONING flips the default for every client at once.
+    reasoning: bool = DEFAULT_REASONING
     # Fast mode is local-model-only: omitting live tools removes llama.cpp's
     # tool grammar and lets it keep sampling on the GPUs.
     fast: bool = False
