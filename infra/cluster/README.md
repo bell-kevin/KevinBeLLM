@@ -216,6 +216,12 @@ For private LAN access from Windows:
 This opens only laptop-loopback port 3000. `-ForwardLlamaApi` is an explicit
 diagnostic option for laptop-loopback port 18080.
 
+For an automatically reconnecting, per-user port 3000 forward at Windows
+logon, run `scripts\windows\Install-KevinBeLLMAutoForward.ps1` once. The task
+runs without elevation or stored credentials. Use
+`Get-KevinBeLLMAutoForwardStatus.ps1` to inspect it and
+`Uninstall-KevinBeLLMAutoForward.ps1` to remove it.
+
 ## Operations
 
 ```bash
