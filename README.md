@@ -266,7 +266,7 @@ guaranteed to fit the model context.
 - `scripts/` — server lifecycle helpers: setup, start, status, doctor, stop,
   autostart installation, and container-engine selection.
 - `scripts/cluster/` — Ubuntu preparation, SSH hardening, pinned builds, model
-  download, service installation, and status checks.
+  download, service installation, status checks, and GPU lighting control.
 - `systemd/cluster/` — the hardened inference unit template.
 - `scripts/windows/` — administration-laptop SSH setup and private forwarding.
 - `infra/cluster/` — non-secret examples; active environment files are ignored.
