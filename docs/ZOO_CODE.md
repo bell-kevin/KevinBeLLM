@@ -141,7 +141,7 @@ access** page:
 | Base URL | `http://127.0.0.1:3000/v1` or the configured HTTPS URL |
 | API Key | The reusable `kbm_v1_...` API key whose value is shown once |
 | Model | Explicitly select `kevinbellm-27b` (or the value shown by the page) |
-| Context Window Size | `32768` |
+| Context Window Size | `49152` |
 | Max Output Tokens | `8192` |
 | Image Support | Off (actively turn this off; Zoo defaults it on) |
 | Prompt Caching | Off |
@@ -202,7 +202,7 @@ block, and lets the model answer or call a tool with the reserved remainder
 instead of returning empty content at `max_tokens`. Clients cannot set the
 budget fields themselves. If long coding turns are still truncated, raise
 `ZOO_MAX_OUTPUT_TOKENS` (up to 16,384), then copy the new value into Zoo.
-Keep in mind that output and input share the 32,768-token context, along with
+Keep in mind that output and input share the 49,152-token context, along with
 tool schemas, file contents, preserved reasoning, and conversation history.
 
 `ZOO_MAX_OUTPUT_TOKENS` is a server-side ceiling, and Zoo's own **Max Output
@@ -210,7 +210,7 @@ Tokens** field is what the client actually sends. Raise the server first: a
 client value above the ceiling is refused with `400 Output tokens must be
 between 1 and <ceiling>`. After redeploying, the **Zoo Code access** page shows
 the new ceiling to copy into Zoo. Raising the ceiling also spends context that
-input can no longer use, because output and input share the same 32,768 tokens.
+input can no longer use, because output and input share the same 49,152 tokens.
 
 For the remote Cloudflare path, also add the two per-device Service Auth headers
 described above. Do not place the KevinBeLLM token in a custom header; the API Key

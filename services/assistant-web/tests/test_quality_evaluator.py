@@ -114,7 +114,7 @@ def test_request_profiles_pin_the_official_qwen_sampling_and_thinking_modes() ->
     assert reasoning["reasoning_budget_message"] == quality.REASONING_BUDGET_MESSAGE
     assert reasoning["backend_sampling"] is True
     assert reasoning["cache_prompt"] is False
-    assert quality.PROFILE_MAX_TOKENS == {"reasoning": 20_480, "nonreasoning": 4_096}
+    assert quality.PROFILE_MAX_TOKENS == {"reasoning": 28_672, "nonreasoning": 4_096}
 
     nonreasoning = quality.quality_request(
         model="model",
@@ -311,6 +311,7 @@ def test_reasoning_budget_rule_and_message_match_the_deployed_app() -> None:
     from app.config import DEFAULT_REASONING_BUDGET_MESSAGE
 
     assert quality.REASONING_BUDGET_MESSAGE == DEFAULT_REASONING_BUDGET_MESSAGE
+    assert quality.reasoning_budget_tokens(28_672) == 24_576
     assert quality.reasoning_budget_tokens(20_480) == 16_384
     assert quality.reasoning_budget_tokens(12_288) == 8_192
     assert quality.reasoning_budget_tokens(1_024) == 256

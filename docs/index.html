@@ -95,7 +95,7 @@
                 <p class="message-label">Quality-first local inference</p>
                 <p>The Q5_K_S preset stays fully resident across both GPUs, defaults to xhigh reasoning, and preserves its reasoning across tool rounds.</p>
                 <div class="tool-pills" aria-label="Deployment components">
-                  <span>32,768-token context</span>
+                  <span>49,152-token context</span>
                   <span>≈30–33 tokens/s measured</span>
                   <span>14/14 local checks</span>
                 </div>
@@ -160,13 +160,13 @@
           <article class="metric-card">
             <h3 class="metric-label">Production reasoning profile</h3>
             <strong>xhigh</strong>
-            <p>Official Qwen thinking sampling, preserved reasoning, 32K context, and up to 20,480 output tokens in the browser with a forced-answer reasoning budget.</p>
+            <p>Official Qwen thinking sampling, preserved reasoning, 48K context, and up to 28,672 output tokens in the browser with a forced-answer reasoning budget.</p>
           </article>
         </div>
         <p class="quality-note">
           The 14-case result is a single-seed deployment regression signal, not a general intelligence test.
           The ≈44 estimate adjusts the hosted model's reported xhigh result for this machine's quantization,
-          32K context, and output limits; only a complete standardized run could establish an official score.
+          48K context, and output limits; only a complete standardized run could establish an official score.
           <a href="https://artificialanalysis.ai/models/releases/qwen3-8-27b" target="_blank" rel="external noopener noreferrer">See the hosted-mode results ↗</a>
         </p>
       </section>
@@ -201,7 +201,7 @@
 
         <p class="pool-note">
           <strong>Quality bought with careful memory tuning.</strong>
-          Pooling both cards keeps the larger Q5_K_S quant entirely in VRAM with a 32,768-token context, q4_0 KV cache, and a measured 67/33 layer split.
+          Pooling both cards keeps the larger Q5_K_S quant entirely in VRAM with a 49,152-token context, q4_0 KV cache, and a measured 67/33 layer split.
         </p>
 
         <div class="boot-note">

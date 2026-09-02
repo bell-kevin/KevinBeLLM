@@ -131,18 +131,20 @@ OnDelta = Callable[[str], Awaitable[None]]
 # mid-sentence truncation on the ones that do. Long code and multi-part analysis
 # are precisely what 2,048 was cutting off.
 #
-# Both must still fit the 32k context alongside the prompt. The composer bounds a
-# conversation at 48,000 characters (roughly 12-16k tokens), so a 20,480-token
-# Think ceiling leaves about 12k for the prompt, and the ceiling must stay under
-# that however these are tuned.
+# Both must still fit the 49,152-token context alongside the prompt. The composer
+# bounds a conversation at 48,000 characters (roughly 12-16k tokens), so a
+# 28,672-token Think ceiling leaves 20,480 for the prompt, and the ceiling must
+# stay well under the context however these are tuned.
 #
 # Measured 2026-09-02 on the deployed Q5_K_S model at xhigh: an ordinary "write a
 # function and ten tests" request generated 12,999 tokens, about 12,200 of them
 # reasoning, before writing a correct answer, and a harder counting problem
 # exhausted the former 12,288 ceiling while still thinking and returned empty
-# content. The ceiling is therefore the code maximum rather than 12,288.
+# content. The llama.cpp context was then raised from 32,768 to 49,152 (the
+# hybrid model's KV cache is small) so the ceiling could grow past 20,480
+# without shrinking the prompt room below its former 20,480.
 ANSWER_MAX_TOKENS = _bounded_env_int("ANSWER_MAX_TOKENS", 4_096, 256, 8_192)
-REASONING_MAX_TOKENS = _bounded_env_int("REASONING_MAX_TOKENS", 20_480, 1_024, 20_480)
+REASONING_MAX_TOKENS = _bounded_env_int("REASONING_MAX_TOKENS", 28_672, 1_024, 32_768)
 
 # llama.cpp counts only the tokens inside the thinking block against this budget.
 # When it runs out, the server injects the configured budget message, closes the
