@@ -132,9 +132,15 @@ python3 scripts/cluster/evaluate-quality.py \
 ```
 
 The 14 original cases cover reasoning, coding, instruction following,
-calibration, grounded tool use, and long-context retrieval. The harness uses
-the production `xhigh` thinking profile by default, scores only the answer after
-its required `FINAL:` marker, and refuses non-loopback endpoints. Its **Local
+calibration, grounded tool use, and long-context retrieval. Two long-thinking
+reasoning cases added on 2026-09-02, an integer-area triangle count and a
+five-house logic grid, each need roughly 9,000 to 10,500 tokens of `xhigh`
+thinking at seed `424242`, so the 16-case gate now exercises the Think ceiling
+and the forced-answer reasoning budget that the shorter cases never reach; each
+result records whether llama.cpp had to force the answer. The harness uses
+the production `xhigh` thinking profile, output ceiling, and reasoning budget
+by default, scores only the answer after its required `FINAL:` marker, and
+refuses non-loopback endpoints. Its **Local
 Quality Score** is a regression signal for this deployment, not an Artificial
 Analysis Intelligence Index score.
 
