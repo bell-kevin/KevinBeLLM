@@ -64,7 +64,7 @@ done
 require_text "${standalone_unit}" 'UnsetEnvironment=XDG_CONFIG_HOME HOME LLAMA_ARG_HF_REPO LLAMA_ARG_HF_FILE LLAMA_ARG_MODEL_URL LLAMA_ARG_DOCKER_REPO LLAMA_ARG_MODELS_PRESET LLAMA_ARG_MODELS_DIR'
 require_text "${standalone_unit}" 'InaccessiblePaths=-%h/.ssh -%h/.gnupg -%h/.config -/etc/llama.cpp'
 for setting in \
-  'Environment=KEVINBELLM_LLAMA_CTX_SIZE=32768' \
+  'Environment=KEVINBELLM_LLAMA_CTX_SIZE=49152' \
   'Environment=KEVINBELLM_LLAMA_BATCH_SIZE=512' \
   'Environment=KEVINBELLM_LLAMA_UBATCH_SIZE=128' \
   'Environment=KEVINBELLM_LLAMA_THREADS=8' \

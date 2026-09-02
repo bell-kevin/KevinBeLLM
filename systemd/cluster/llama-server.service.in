@@ -11,7 +11,7 @@ Type=simple
 # Measured defaults for the RTX 3060 + RTX 3070 pair in Machine A. The private
 # env file supplies the verified model path/alias and may tune performance;
 # API and security arguments stay fixed.
-Environment=KEVINBELLM_LLAMA_CTX_SIZE=32768
+Environment=KEVINBELLM_LLAMA_CTX_SIZE=49152
 Environment=KEVINBELLM_LLAMA_BATCH_SIZE=512
 Environment=KEVINBELLM_LLAMA_UBATCH_SIZE=128
 Environment=KEVINBELLM_LLAMA_THREADS=8
