@@ -4,10 +4,12 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 
+import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from app.config import Settings
-from app.main import _close_event_queue, create_app
+from app.main import ChatBody, _close_event_queue, create_app
 
 
 def _settings(tmp_path) -> Settings:
@@ -80,6 +82,34 @@ def test_stream_worker_cancelled_while_waiting_to_terminate_still_closes() -> No
         assert await asyncio.wait_for(queue.get(), timeout=0.1) is None
 
     asyncio.run(exercise())
+
+
+def test_browser_history_accepts_only_bounded_assistant_reasoning() -> None:
+    body = ChatBody(
+        model="test-model",
+        messages=[
+            {"role": "user", "content": "first"},
+            {
+                "role": "assistant",
+                "content": "answer",
+                "reasoning_content": "private in-memory plan",
+            },
+            {"role": "user", "content": "follow up"},
+        ],
+    )
+    assert body.messages[1].reasoning_content == "private in-memory plan"
+
+    with pytest.raises(ValidationError):
+        ChatBody(
+            model="test-model",
+            messages=[
+                {
+                    "role": "user",
+                    "content": "hello",
+                    "reasoning_content": "users cannot inject assistant reasoning",
+                }
+            ],
+        )
 
 
 def test_login_session_csrf_models_and_chat(tmp_path, monkeypatch) -> None:

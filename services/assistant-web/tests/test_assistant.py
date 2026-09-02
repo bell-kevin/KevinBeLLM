@@ -216,10 +216,18 @@ def test_llamacpp_chat_completion_is_normalized(tmp_path) -> None:
     assert requests[0]["model"] == "test-model"
     assert requests[0]["stream"] is True
     assert requests[0]["max_tokens"] == 4_096
-    assert requests[0]["temperature"] == 0.3
+    assert requests[0]["temperature"] == 0.7
+    assert requests[0]["top_p"] == 0.8
+    assert requests[0]["top_k"] == 20
+    assert requests[0]["min_p"] == 0.0
+    assert requests[0]["presence_penalty"] == 1.5
+    assert requests[0]["repeat_penalty"] == 1.0
     assert "backend_sampling" not in requests[0]
     assert requests[0]["reasoning_effort"] == "none"
-    assert requests[0]["chat_template_kwargs"] == {"enable_thinking": False}
+    assert requests[0]["chat_template_kwargs"] == {
+        "enable_thinking": False,
+        "preserve_thinking": False,
+    }
     assert requests[0]["parse_tool_calls"] is True
     assert requests[0]["tool_choice"] == "auto"
     assert requests[0]["messages"][-1] == {"role": "user", "content": "hello"}
@@ -512,7 +520,10 @@ def test_reasoning_is_opt_in_and_never_enters_the_answer(tmp_path) -> None:
     content, events = run(False)
     assert content == "Paris"
     assert requests[-1]["reasoning_effort"] == "none"
-    assert requests[-1]["chat_template_kwargs"] == {"enable_thinking": False}
+    assert requests[-1]["chat_template_kwargs"] == {
+        "enable_thinking": False,
+        "preserve_thinking": False,
+    }
     assert requests[-1]["max_tokens"] == 4_096
     # Even though the server sent reasoning, fast mode must not surface it.
     assert not [event for event, _ in events if event == "reasoning"]
@@ -520,13 +531,104 @@ def test_reasoning_is_opt_in_and_never_enters_the_answer(tmp_path) -> None:
     # Reasoning mode: suppression removed and the budget raised.
     content, events = run(True)
     assert content == "Paris"
-    assert "reasoning_effort" not in requests[-1]
-    assert "chat_template_kwargs" not in requests[-1]
+    assert requests[-1]["reasoning_effort"] == "xhigh"
+    assert requests[-1]["chat_template_kwargs"] == {
+        "enable_thinking": True,
+        "preserve_thinking": True,
+    }
+    assert requests[-1]["temperature"] == 1.0
+    assert requests[-1]["top_p"] == 0.95
+    assert requests[-1]["top_k"] == 20
+    assert requests[-1]["min_p"] == 0.0
+    assert requests[-1]["presence_penalty"] == 0.0
+    assert requests[-1]["repeat_penalty"] == 1.0
     assert requests[-1]["max_tokens"] == 12_288
     thoughts = [p["content"] for e, p in events if e == "reasoning"]
     assert thoughts == ["weighing ", "options"]
     # The stored answer must contain no chain-of-thought.
     assert "weighing" not in content
+
+
+def test_reasoning_trace_is_preserved_only_inside_the_tool_loop(
+    monkeypatch, tmp_path
+) -> None:
+    settings = _settings(tmp_path)
+    requests: list[dict] = []
+
+    def _sse(*chunks: dict) -> bytes:
+        lines = [f"data: {json.dumps(chunk)}\n\n" for chunk in chunks]
+        lines.append("data: [DONE]\n\n")
+        return "".join(lines).encode()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        requests.append(body)
+        if len(requests) == 1:
+            chunks = (
+                {"choices": [{"index": 0, "delta": {"reasoning": "search first"}}]},
+                {
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {
+                                "tool_calls": [
+                                    {
+                                        "index": 0,
+                                        "id": "call-1",
+                                        "function": {
+                                            "name": "web_search",
+                                            "arguments": '{"query":"answer"}',
+                                        },
+                                    }
+                                ]
+                            },
+                        }
+                    ]
+                },
+            )
+        else:
+            chunks = ({"choices": [{"index": 0, "delta": {"content": "Verified"}}]},)
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "text/event-stream"},
+            content=_sse(*chunks),
+        )
+
+    async def fake_tool_run(_self, _name, _arguments):
+        return ToolExecution('{"results":[]}')
+
+    monkeypatch.setattr("app.assistant.ToolRunner.run", fake_tool_run)
+
+    async def run():
+        events: list[tuple[str, dict]] = []
+
+        async def emit(event: str, payload: dict) -> None:
+            events.append((event, payload))
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            result = await run_chat(
+                client,
+                settings,
+                "test-model",
+                [{"role": "user", "content": "research"}],
+                emit,
+                reasoning=True,
+            )
+        return result, events
+
+    (content, _sources), events = asyncio.run(run())
+    assert content == "Verified"
+    assert [payload["content"] for event, payload in events if event == "reasoning"] == [
+        "search first"
+    ]
+    preserved = next(
+        message
+        for message in requests[1]["messages"]
+        if message.get("role") == "assistant" and message.get("tool_calls")
+    )
+    assert preserved["reasoning_content"] == "search first"
+    # The trace is context for the next completion, not part of the visible answer.
+    assert "search first" not in content
 
 
 def test_leaked_tool_markup_never_reaches_the_answer() -> None:
