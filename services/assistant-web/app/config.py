@@ -62,6 +62,30 @@ def _inference_url() -> str:
     )
 
 
+# llama.cpp injects this into the thinking block when a request's reasoning
+# budget runs out, then closes the block so the model writes an answer with the
+# remaining output allowance instead of returning empty content at max_tokens.
+# Measured 2026-09-02 on the deployed Q5_K_S xhigh model: a 4,096-token budget
+# cut an enumeration mid-way and the model still returned the correct answer.
+DEFAULT_REASONING_BUDGET_MESSAGE = (
+    "Thinking time is up. I will stop reasoning here and write the complete "
+    "final answer now, using my best conclusions so far."
+)
+MAX_REASONING_BUDGET_MESSAGE_CHARS = 500
+
+
+def _reasoning_budget_message() -> str:
+    value = os.getenv("REASONING_BUDGET_MESSAGE", "").strip()
+    if not value:
+        return DEFAULT_REASONING_BUDGET_MESSAGE
+    if len(value) > MAX_REASONING_BUDGET_MESSAGE_CHARS:
+        raise RuntimeError(
+            "REASONING_BUDGET_MESSAGE must be at most "
+            f"{MAX_REASONING_BUDGET_MESSAGE_CHARS} characters"
+        )
+    return value
+
+
 def _preferred_models() -> tuple[str, ...]:
     raw = (
         os.getenv("PREFERRED_MODELS")
@@ -114,6 +138,7 @@ class Settings:
     zoo_max_output_tokens: int = 8_192
     zoo_context_window: int = 32_768
     zoo_enable_thinking: bool = True
+    reasoning_budget_message: str = DEFAULT_REASONING_BUDGET_MESSAGE
 
     def __post_init__(self) -> None:
         if self.zoo_max_output_tokens >= self.zoo_context_window:
@@ -188,6 +213,7 @@ def load_settings() -> Settings:
             "ZOO_CONTEXT_WINDOW", 32_768, 4_096, 262_144
         ),
         zoo_enable_thinking=_bool_env("ZOO_ENABLE_THINKING", True),
+        reasoning_budget_message=_reasoning_budget_message(),
     )
 
 

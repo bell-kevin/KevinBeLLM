@@ -44,7 +44,18 @@ from urllib.request import (
 EVALUATOR_VERSION = 1
 DEFAULT_SEED = 424_242
 DEFAULT_TIMEOUT_SECONDS = 600.0
-PROFILE_MAX_TOKENS = {"reasoning": 12_288, "nonreasoning": 4_096}
+# Matches the deployed app's Think and Fast ceilings so the gate exercises the
+# same output budget production uses.
+PROFILE_MAX_TOKENS = {"reasoning": 20_480, "nonreasoning": 4_096}
+# Mirrors the assistant: llama.cpp counts only thinking tokens against the budget
+# and, when it runs out, injects this message before forcing the answer, so a
+# case that would have exhausted max_tokens mid-thought still yields a scoreable
+# FINAL line. Keep the text identical to the app's DEFAULT_REASONING_BUDGET_MESSAGE.
+REASONING_ANSWER_RESERVE_TOKENS = 4_096
+REASONING_BUDGET_MESSAGE = (
+    "Thinking time is up. I will stop reasoning here and write the complete "
+    "final answer now, using my best conclusions so far."
+)
 PROFILE_SAMPLING: Mapping[str, Mapping[str, int | float]] = {
     # Qwen3.8's official thinking recipe.  Keep the complete profile together:
     # mixing an instruct-mode sampler into xhigh reasoning changes quality.
@@ -451,6 +462,14 @@ def _bounded_max_tokens(value: str) -> int:
     return tokens
 
 
+def reasoning_budget_tokens(max_tokens: int) -> int:
+    """The app's rule: reserve the Fast-mode answer allowance for the answer."""
+    return max(
+        1,
+        min(max(256, max_tokens - REASONING_ANSWER_RESERVE_TOKENS), max_tokens - 256),
+    )
+
+
 def quality_request(
     *,
     model: str,
@@ -480,6 +499,8 @@ def quality_request(
             "enable_thinking": True,
             "preserve_thinking": True,
         }
+        body["reasoning_budget_tokens"] = reasoning_budget_tokens(max_tokens)
+        body["reasoning_budget_message"] = REASONING_BUDGET_MESSAGE
     elif profile == "nonreasoning":
         body["reasoning_effort"] = "none"
         body["chat_template_kwargs"] = {
@@ -679,6 +700,7 @@ def _case_result(
     elapsed_seconds: float,
     tool_trace: Sequence[Mapping[str, Any]],
     error: str | None,
+    reasoning_budget_hit: bool = False,
 ) -> dict[str, Any]:
     output_bytes = content.encode("utf-8")
     return {
@@ -690,6 +712,9 @@ def _case_result(
         "expected": list(case.expected),
         "answer": answer,
         "finish_reason": finish_reason,
+        # True when llama.cpp had to inject the budget message: the case needed
+        # more thinking than the budget allows, so its answer is best-effort.
+        "reasoning_budget_hit": reasoning_budget_hit,
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
         "elapsed_seconds": round(elapsed_seconds, 6),
@@ -843,6 +868,10 @@ def run_case(
                 error="model emitted an unexpected final tool call",
             )
         answer = extract_final_answer(last_content)
+        budget_hit = (
+            profile == "reasoning"
+            and REASONING_BUDGET_MESSAGE in response.reasoning_content
+        )
         if finish_reason == "length":
             return _case_result(
                 case=case,
@@ -857,6 +886,7 @@ def run_case(
                 elapsed_seconds=time.perf_counter() - started_at,
                 tool_trace=tool_trace,
                 error="output exhausted the token budget",
+                reasoning_budget_hit=budget_hit,
             )
         passed = score_answer(case, answer)
         return _case_result(
@@ -872,6 +902,7 @@ def run_case(
             elapsed_seconds=time.perf_counter() - started_at,
             tool_trace=tool_trace,
             error=None if passed else "missing or incorrect FINAL answer",
+            reasoning_budget_hit=budget_hit,
         )
     except EvaluationError as exc:
         return _case_result(
@@ -980,6 +1011,12 @@ def build_report(
                 "enable_thinking": profile == "reasoning",
                 "preserve_thinking": profile == "reasoning",
             },
+            "reasoning_budget_tokens": (
+                reasoning_budget_tokens(max_tokens) if profile == "reasoning" else None
+            ),
+            "reasoning_budget_message": (
+                REASONING_BUDGET_MESSAGE if profile == "reasoning" else None
+            ),
             "cache_prompt": False,
             "sequential": True,
         },

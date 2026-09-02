@@ -525,6 +525,8 @@ def test_reasoning_is_opt_in_and_never_enters_the_answer(tmp_path) -> None:
         "preserve_thinking": False,
     }
     assert requests[-1]["max_tokens"] == 4_096
+    assert "reasoning_budget_tokens" not in requests[-1]
+    assert "reasoning_budget_message" not in requests[-1]
     # Even though the server sent reasoning, fast mode must not surface it.
     assert not [event for event, _ in events if event == "reasoning"]
 
@@ -542,7 +544,12 @@ def test_reasoning_is_opt_in_and_never_enters_the_answer(tmp_path) -> None:
     assert requests[-1]["min_p"] == 0.0
     assert requests[-1]["presence_penalty"] == 0.0
     assert requests[-1]["repeat_penalty"] == 1.0
-    assert requests[-1]["max_tokens"] == 12_288
+    assert requests[-1]["max_tokens"] == 20_480
+    # The thinking budget reserves the full Fast-mode answer allowance, and the
+    # forced-answer message comes from settings so one deployment knob tunes it.
+    assert requests[-1]["reasoning_budget_tokens"] == 20_480 - 4_096
+    assert requests[-1]["reasoning_budget_message"] == settings.reasoning_budget_message
+    assert settings.reasoning_budget_message.startswith("Thinking time is up.")
     thoughts = [p["content"] for e, p in events if e == "reasoning"]
     assert thoughts == ["weighing ", "options"]
     # The stored answer must contain no chain-of-thought.
