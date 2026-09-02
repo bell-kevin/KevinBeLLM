@@ -204,7 +204,8 @@ python3 scripts/cluster/evaluate-quality.py \
 ```
 
 The evaluator defaults to `xhigh`, preserved thinking and Qwen's official
-thinking sampler. It scores a deterministic 14-case corpus spanning reasoning,
+thinking sampler, plus the production output ceiling and forced-answer
+reasoning budget. It scores a deterministic 16-case corpus spanning reasoning,
 coding, instruction following, calibration, grounded tool use, and long-context
 retrieval. `--fail-on-regression` rejects a lower total or a regression in the
 protected calibration or long-context categories. Run `--list-cases` to inspect

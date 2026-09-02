@@ -20,8 +20,12 @@ sys.modules[SPEC.name] = quality
 SPEC.loader.exec_module(quality)
 
 
+def _case_by_id(case_id: str):
+    return next(case for case in quality.CORPUS if case.id == case_id)
+
+
 def test_corpus_is_compact_unique_and_covers_the_quality_risks() -> None:
-    assert len(quality.CORPUS) == 14
+    assert len(quality.CORPUS) == 16
     assert len({case.id for case in quality.CORPUS}) == len(quality.CORPUS)
     assert {case.category for case in quality.CORPUS} == {
         "calibration",
@@ -151,7 +155,7 @@ def test_request_profiles_pin_the_official_qwen_sampling_and_thinking_modes() ->
         profile="reasoning",
         seed=17,
         max_tokens=12_288,
-        tools=quality.CORPUS[10].tools,
+        tools=_case_by_id("tool_exchange_grounding").tools,
     )
     assert "backend_sampling" not in with_tools
     assert with_tools["tool_choice"] == "auto"
@@ -394,7 +398,7 @@ def test_tool_case_compares_call_and_only_injects_canned_result() -> None:
 
 
 def test_wrong_tool_call_fails_without_injecting_or_executing_anything() -> None:
-    case = quality.CORPUS[10]
+    case = _case_by_id("tool_exchange_grounding")
     requests = 0
 
     def requester(_endpoint, _body, _timeout):

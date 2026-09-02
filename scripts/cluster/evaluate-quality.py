@@ -273,6 +273,54 @@ CORPUS: tuple[QualityCase, ...] = (
         ),
         expected=("B",),
     ),
+    # Long-thinking cases. Measured 2026-09-02 on the deployed Q5_K_S xhigh
+    # model: this one used about 9,000 tokens with seed 424242 and, unseeded
+    # under the former 12,288-token ceiling, was still enumerating when cut off
+    # with empty content. It exercises the Think ceiling and the forced-answer
+    # budget that the shorter cases never reach.
+    QualityCase(
+        id="reasoning_integer_area_triangles",
+        category="reasoning",
+        prompt=(
+            "Let N be the number of ordered triples (a, b, c) of positive integers with "
+            "a <= b <= c and a + b + c = 60 that are the side lengths of a non-degenerate "
+            "triangle whose area is an integer. Find N. Put only the integer after FINAL."
+        ),
+        expected=("3",),
+    ),
+    # Generated from a random arrangement and verified unique by exhaustive
+    # search; the deployed model solved it with seed 424242 in about 10,500
+    # tokens of deduction.
+    QualityCase(
+        id="reasoning_five_house_grid",
+        category="reasoning",
+        prompt=(
+            "Five houses stand in a row, numbered 1 to 5 from left to right. Each house is "
+            "painted a different color (red, blue, green, white, yellow). Each house has one "
+            "owner (Ada, Bram, Cleo, Dev, Elin); each owner keeps a different pet (cat, dog, "
+            "fox, owl, hare) and drinks a different drink (tea, coffee, milk, juice, water). "
+            "\"Immediately to the right of\" means the next house number up. \"Somewhere to "
+            "the left of\" means a smaller house number, not necessarily adjacent. \"Next "
+            "to\" means adjacent on either side. These clues determine a unique arrangement:\n"
+            "1. Ada lives somewhere to the left of the red house's owner.\n"
+            "2. Cleo lives somewhere to the left of the cat owner.\n"
+            "3. The blue house's owner lives next to the cat owner.\n"
+            "4. The yellow house's owner lives next to Dev.\n"
+            "5. The hare owner lives somewhere to the left of Dev.\n"
+            "6. Elin lives somewhere to the left of the tea drinker.\n"
+            "7. Elin lives immediately to the right of the water drinker.\n"
+            "8. Bram lives immediately to the right of the coffee drinker.\n"
+            "9. The tea drinker lives next to the cat owner.\n"
+            "10. Bram lives next to the dog owner.\n"
+            "11. The green house's owner lives somewhere to the left of Bram.\n"
+            "12. The juice drinker lives somewhere to the left of Elin.\n"
+            "13. The yellow house's owner lives immediately to the right of the fox owner.\n"
+            "14. The red house's owner lives next to the dog owner.\n"
+            "15. The blue house's owner lives next to the red house's owner.\n"
+            "Which person keeps the owl? Put only the name after FINAL."
+        ),
+        expected=("Dev",),
+    ),
     QualityCase(
         id="coding_trace",
         category="coding",
