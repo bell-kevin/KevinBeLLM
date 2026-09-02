@@ -222,6 +222,30 @@ runs without elevation or stored credentials. Use
 `Get-KevinBeLLMAutoForwardStatus.ps1` to inspect it and
 `Uninstall-KevinBeLLMAutoForward.ps1` to remove it.
 
+## 6. Turn off the RTX 3070 lighting (optional)
+
+The Gigabyte RTX 3070 Gaming OC lights up from its own flash profile on every
+power cycle. Its LED controller sits on the GPU's I2C bus, which only root can
+reach through the NVIDIA driver, so this runs on Machine A as the login user
+and uses sudo where needed:
+
+```bash
+./scripts/cluster/gpu-rgb-off.sh
+```
+
+The helper fetches a pinned, SHA-256-verified OpenRGB AppImage once into
+`/opt`, sets the card to black at zero brightness, and installs the root
+oneshot `gpu-rgb-off.service` so the setting returns after every boot. Pass
+`--once` to skip the unit or `--uninstall` to remove everything it installed.
+
+It refuses to run while `nvidia-smi` cannot enumerate every GPU. After an
+Xid 79 ("GPU has fallen off the bus") event the driver cannot reach the card
+until Machine A is rebooted at its console:
+
+```bash
+journalctl -k -b | grep -i xid
+```
+
 ## Operations
 
 ```bash
