@@ -630,12 +630,31 @@
       if (content.length < rawContent.length) {
         wasTrimmed = true;
       }
+      let reasoningContent = "";
+      if (message.role === "assistant" && typeof message.reasoning_content === "string") {
+        const rawReasoning = message.reasoning_content;
+        // The end of a trace contains the settled plan/conclusion and is more
+        // useful than its discarded opening if the context budget is tight.
+        reasoningContent = rawReasoning.slice(-MAX_REQUEST_MESSAGE_CHARS);
+        if (reasoningContent.length < rawReasoning.length) {
+          wasTrimmed = true;
+        }
+      }
       if (selected.length >= MAX_REQUEST_MESSAGES || charCount + content.length > MAX_REQUEST_CHARS) {
         wasTrimmed = true;
         break;
       }
-      selected.push({ role: message.role, content });
-      charCount += content.length;
+      const reasoningRoom = MAX_REQUEST_CHARS - charCount - content.length;
+      if (reasoningContent.length > reasoningRoom) {
+        reasoningContent = reasoningRoom > 0 ? reasoningContent.slice(-reasoningRoom) : "";
+        wasTrimmed = true;
+      }
+      const selectedMessage = { role: message.role, content };
+      if (reasoningContent) {
+        selectedMessage.reasoning_content = reasoningContent;
+      }
+      selected.push(selectedMessage);
+      charCount += content.length + reasoningContent.length;
     }
     selected.reverse();
     if (selected.length < allMessages.length) {
@@ -935,7 +954,12 @@
         throw new Error("The model completed without returning any text.");
       }
 
-      state.messages.push({ role: "assistant", content: assistantView.content });
+      const assistantMessage = { role: "assistant", content: assistantView.content };
+      const reasoningContent = assistantView.reasoningText?.data || "";
+      if (reasoningContent) {
+        assistantMessage.reasoning_content = reasoningContent.slice(-MAX_REQUEST_MESSAGE_CHARS);
+      }
+      state.messages.push(assistantMessage);
       if (state.messages.length > MAX_STORED_MESSAGES) {
         state.messages = state.messages.slice(-MAX_STORED_MESSAGES);
       }
