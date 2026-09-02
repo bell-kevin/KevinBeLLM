@@ -191,8 +191,17 @@ are supported in addition to the standard OpenAI fields; arbitrary llama.cpp
 controls and client-supplied `chat_template_kwargs` remain rejected.
 
 Deep `xhigh` reasoning can consume much of an 8,192-token output allowance
-before emitting the answer or a tool call. If long coding turns are truncated,
-raise `ZOO_MAX_OUTPUT_TOKENS` (up to 16,384), then copy the new value into Zoo.
+before emitting the answer or a tool call. Measured on the deployed model on
+2026-09-02, an ordinary "write a function and ten tests" request thought for
+about 12,200 tokens before answering. The gateway therefore attaches a
+per-request reasoning budget to every thinking request: the client's output
+allowance minus a 4,096-token answer reserve (or half the allowance when it is
+smaller). llama.cpp counts only thinking tokens against it and, when it runs
+out, injects the server's `REASONING_BUDGET_MESSAGE`, closes the thinking
+block, and lets the model answer or call a tool with the reserved remainder
+instead of returning empty content at `max_tokens`. Clients cannot set the
+budget fields themselves. If long coding turns are still truncated, raise
+`ZOO_MAX_OUTPUT_TOKENS` (up to 16,384), then copy the new value into Zoo.
 Keep in mind that output and input share the 32,768-token context, along with
 tool schemas, file contents, preserved reasoning, and conversation history.
 

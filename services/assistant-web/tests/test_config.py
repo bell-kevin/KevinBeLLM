@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.config import load_settings
+from app.config import DEFAULT_REASONING_BUDGET_MESSAGE, load_settings
 
 
 def _clear_inference_environment(monkeypatch) -> None:
@@ -60,4 +60,21 @@ def test_zoo_output_budget_must_leave_input_context(monkeypatch) -> None:
     monkeypatch.setenv("ZOO_MAX_OUTPUT_TOKENS", "4096")
 
     with pytest.raises(RuntimeError, match="must be smaller"):
+        load_settings()
+
+
+def test_reasoning_budget_message_defaults_and_is_bounded(monkeypatch) -> None:
+    _clear_inference_environment(monkeypatch)
+    monkeypatch.delenv("REASONING_BUDGET_MESSAGE", raising=False)
+    assert load_settings().reasoning_budget_message == DEFAULT_REASONING_BUDGET_MESSAGE
+
+    monkeypatch.setenv("REASONING_BUDGET_MESSAGE", "  Answer now.  ")
+    assert load_settings().reasoning_budget_message == "Answer now."
+
+    # Whitespace-only falls back to the default rather than injecting nothing.
+    monkeypatch.setenv("REASONING_BUDGET_MESSAGE", "   ")
+    assert load_settings().reasoning_budget_message == DEFAULT_REASONING_BUDGET_MESSAGE
+
+    monkeypatch.setenv("REASONING_BUDGET_MESSAGE", "x" * 501)
+    with pytest.raises(RuntimeError, match="at most 500"):
         load_settings()

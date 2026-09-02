@@ -105,8 +105,12 @@ def test_request_profiles_pin_the_official_qwen_sampling_and_thinking_modes() ->
         "enable_thinking": True,
         "preserve_thinking": True,
     }
+    # The gate uses the app's forced-answer budget rule and its exact message.
+    assert reasoning["reasoning_budget_tokens"] == 12_288 - 4_096
+    assert reasoning["reasoning_budget_message"] == quality.REASONING_BUDGET_MESSAGE
     assert reasoning["backend_sampling"] is True
     assert reasoning["cache_prompt"] is False
+    assert quality.PROFILE_MAX_TOKENS == {"reasoning": 20_480, "nonreasoning": 4_096}
 
     nonreasoning = quality.quality_request(
         model="model",
@@ -138,6 +142,8 @@ def test_request_profiles_pin_the_official_qwen_sampling_and_thinking_modes() ->
         "enable_thinking": False,
         "preserve_thinking": False,
     }
+    assert "reasoning_budget_tokens" not in nonreasoning
+    assert "reasoning_budget_message" not in nonreasoning
 
     with_tools = quality.quality_request(
         model="model",
@@ -260,9 +266,51 @@ def test_run_case_scores_visible_answer_and_never_records_reasoning() -> None:
     assert result["answer"] == "42"
     assert result["prompt_tokens"] == 20
     assert result["completion_tokens"] == 4
+    assert result["reasoning_budget_hit"] is False
     assert len(captured) == 1
     assert captured[0][1]["reasoning_effort"] == "xhigh"
     assert "reasoning_content" not in result
+
+
+def test_run_case_flags_a_forced_answer_without_recording_the_reasoning() -> None:
+    case = quality.QualityCase(
+        id="forced", category="reasoning", prompt="Count it", expected=("3",)
+    )
+
+    def requester(_endpoint, _body, _timeout):
+        return quality.ChatResponse(
+            content="Best effort.\nFINAL: 3",
+            tool_calls=(),
+            finish_reason="stop",
+            prompt_tokens=30,
+            completion_tokens=16_400,
+            reasoning_content="enumerating... " + quality.REASONING_BUDGET_MESSAGE,
+        )
+
+    result = quality.run_case(
+        endpoint="http://127.0.0.1:8080/v1/chat/completions",
+        model="model",
+        profile="reasoning",
+        seed=7,
+        max_tokens=20_480,
+        timeout=30,
+        case=case,
+        requester=requester,
+    )
+    assert result["passed"] is True
+    assert result["reasoning_budget_hit"] is True
+    assert "reasoning_content" not in result
+    assert "enumerating" not in json.dumps(result)
+
+
+def test_reasoning_budget_rule_and_message_match_the_deployed_app() -> None:
+    from app.config import DEFAULT_REASONING_BUDGET_MESSAGE
+
+    assert quality.REASONING_BUDGET_MESSAGE == DEFAULT_REASONING_BUDGET_MESSAGE
+    assert quality.reasoning_budget_tokens(20_480) == 16_384
+    assert quality.reasoning_budget_tokens(12_288) == 8_192
+    assert quality.reasoning_budget_tokens(1_024) == 256
+    assert quality.reasoning_budget_tokens(256) == 1
 
 
 def test_tool_case_compares_call_and_only_injects_canned_result() -> None:
