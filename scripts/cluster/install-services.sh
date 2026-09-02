@@ -127,12 +127,16 @@ render_unit() {
 }
 
 model_preset="$(cluster_env_value "${env_file}" MODEL_PRESET || true)"
-model_preset="${model_preset:-27b-iq4_xs}"
+model_preset="${model_preset:-27b-q5_k_s}"
 model_path="$(cluster_env_value "${env_file}" MODEL_PATH || true)"
 model_alias="$(cluster_env_value "${env_file}" LLAMA_MODEL_ALIAS || true)"
-# Machine A runs the verified 27B artifact layer-split over both GPUs.
-[[ "${model_preset}" == '27b-iq4_xs' ]] || \
-  cluster_die "MODEL_PRESET must be 27b-iq4_xs in ${env_file}."
+# Machine A runs one of the checksum-pinned 27B artifacts layer-split over both
+# GPUs. Keeping the fallback explicit preserves reproducible quality A/B tests
+# without weakening verification or accepting an arbitrary GGUF.
+case "${model_preset}" in
+  27b-q5_k_s|27b-iq4_xs) ;;
+  *) cluster_die "MODEL_PRESET must be 27b-iq4_xs or 27b-q5_k_s in ${env_file}." ;;
+esac
 [[ "${model_path}" == /* ]] || cluster_die "MODEL_PATH must be an absolute path in ${env_file}."
 [[ "${model_path}" != *CHANGE_ME* ]] || cluster_die "Replace the MODEL_PATH placeholder in ${env_file}."
 [[ "${model_alias}" == 'kevinbellm-27b' ]] || \

@@ -17,6 +17,10 @@ OPENAI_MAX_REQUEST_BYTES = 2 * 1024 * 1024
 OPENAI_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 MAX_MESSAGES = 256
 MAX_TOOLS = 128
+MAX_REASONING_CONTENT_CHARS = 1_000_000
+# This is above Qwen3.8's 248,320-token padded vocabulary while still bounding
+# pathological client integers before they reach the sampler.
+MAX_TOP_K = 262_144
 _TOOL_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 _ALLOWED_BODY_KEYS = {
@@ -28,10 +32,13 @@ _ALLOWED_BODY_KEYS = {
     "max_completion_tokens",
     "temperature",
     "top_p",
+    "top_k",
+    "min_p",
     "stop",
     "seed",
     "presence_penalty",
     "frequency_penalty",
+    "repeat_penalty",
     "n",
     "tools",
     "tool_choice",
@@ -40,7 +47,33 @@ _ALLOWED_BODY_KEYS = {
     "response_format",
     "user",
 }
-_ALLOWED_MESSAGE_KEYS = {"role", "content", "name", "tool_calls", "tool_call_id"}
+_ALLOWED_MESSAGE_KEYS = {
+    "role",
+    "content",
+    "name",
+    "tool_calls",
+    "tool_call_id",
+    "reasoning_content",
+}
+
+_OFFICIAL_REASONING_EFFORTS = {"low", "medium", "xhigh"}
+_REASONING_EFFORT_ALIASES = {"high": "xhigh", "max": "xhigh"}
+_THINKING_SAMPLING_DEFAULTS = {
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "top_k": 20,
+    "min_p": 0.0,
+    "presence_penalty": 0.0,
+    "repeat_penalty": 1.0,
+}
+_NONTHINKING_SAMPLING_DEFAULTS = {
+    "temperature": 0.7,
+    "top_p": 0.8,
+    "top_k": 20,
+    "min_p": 0.0,
+    "presence_penalty": 1.5,
+    "repeat_penalty": 1.0,
+}
 
 
 class GatewayRequestError(ValueError):
@@ -152,6 +185,16 @@ def _validate_messages(value: Any) -> list[dict[str, Any]]:
                     param=f"messages.{index}.tool_calls",
                 )
             _validate_tool_calls(message["tool_calls"], index)
+        if "reasoning_content" in message and (
+            role != "assistant"
+            or not _bounded_string(
+                message["reasoning_content"], MAX_REASONING_CONTENT_CHARS
+            )
+        ):
+            raise GatewayRequestError(
+                "Only assistant messages may contain bounded reasoning_content",
+                param=f"messages.{index}.reasoning_content",
+            )
     return value
 
 
@@ -242,17 +285,65 @@ def validate_chat_body(payload: Any, settings: Settings) -> dict[str, Any]:
     # llama.cpp's stable Chat Completions spelling.
     result["max_tokens"] = supplied_max
 
+    requested_effort = payload.get("reasoning_effort", "xhigh")
+    if not isinstance(requested_effort, str):
+        raise GatewayRequestError(
+            "reasoning_effort is invalid", param="reasoning_effort"
+        )
+    effort = _REASONING_EFFORT_ALIASES.get(requested_effort, requested_effort)
+    if effort != "none" and effort not in _OFFICIAL_REASONING_EFFORTS:
+        raise GatewayRequestError(
+            "reasoning_effort must be low, medium, xhigh, or none",
+            param="reasoning_effort",
+        )
+    thinking = effort != "none"
+    if thinking and not settings.zoo_enable_thinking:
+        raise GatewayRequestError(
+            "Reasoning is turned off for this deployment; send reasoning_effort=none "
+            "or set ZOO_ENABLE_THINKING on the server",
+            param="reasoning_effort",
+        )
+
+    sampling_defaults = (
+        _THINKING_SAMPLING_DEFAULTS
+        if thinking
+        else _NONTHINKING_SAMPLING_DEFAULTS
+    )
     for key, minimum, maximum in (
         ("temperature", 0.0, 2.0),
         ("top_p", 0.0, 1.0),
+        ("min_p", 0.0, 1.0),
         ("presence_penalty", -2.0, 2.0),
-        ("frequency_penalty", -2.0, 2.0),
+        ("repeat_penalty", 0.0, 2.0),
     ):
-        if key in payload:
-            value = payload[key]
-            if not _plain_number(value) or not minimum <= value <= maximum:
-                raise GatewayRequestError(f"{key} is out of range", param=key)
-            result[key] = value
+        value = payload.get(key, sampling_defaults[key])
+        if (
+            not _plain_number(value)
+            or not minimum <= value <= maximum
+            or (key == "repeat_penalty" and value == 0)
+        ):
+            raise GatewayRequestError(f"{key} is out of range", param=key)
+        result[key] = value
+
+    top_k = payload.get("top_k", sampling_defaults["top_k"])
+    if (
+        not isinstance(top_k, int)
+        or isinstance(top_k, bool)
+        or not 0 <= top_k <= MAX_TOP_K
+    ):
+        raise GatewayRequestError("top_k is out of range", param="top_k")
+    result["top_k"] = top_k
+
+    if "frequency_penalty" in payload:
+        frequency_penalty = payload["frequency_penalty"]
+        if (
+            not _plain_number(frequency_penalty)
+            or not -2.0 <= frequency_penalty <= 2.0
+        ):
+            raise GatewayRequestError(
+                "frequency_penalty is out of range", param="frequency_penalty"
+            )
+        result["frequency_penalty"] = frequency_penalty
 
     if "seed" in payload:
         seed = payload["seed"]
@@ -331,26 +422,16 @@ def validate_chat_body(payload: Any, settings: Settings) -> dict[str, Any]:
             raise GatewayRequestError("response_format is invalid", param="response_format")
         result["response_format"] = {"type": response_format["type"]}
 
-    # Qwen3.8 exposes thinking as the boolean `enable_thinking`, not as OpenAI's
-    # graded scale, so every level a client can send means the same thing. Any
-    # value other than "none" turns thinking on and the level itself is dropped
-    # rather than forwarded, because upstream has nothing to vary with it.
-    effort = payload.get("reasoning_effort", "none")
-    if not _bounded_string(effort, 32):
-        raise GatewayRequestError(
-            "reasoning_effort is invalid", param="reasoning_effort"
-        )
-    thinking = effort != "none"
-    if thinking and not settings.zoo_enable_thinking:
-        raise GatewayRequestError(
-            "Reasoning is turned off for this deployment; disable it in the client "
-            "or set ZOO_ENABLE_THINKING on the server",
-            param="reasoning_effort",
-        )
+    # Qwen3.8's official OpenAI contract carries the effort at the top level,
+    # while the llama.cpp chat template consumes the two explicit mode flags.
+    # Keeping preserve_thinking enabled in both modes retains prior reasoning for
+    # agent consistency and prefix-cache reuse, as recommended by Qwen.
+    result["reasoning_effort"] = effort
     result["parse_tool_calls"] = True
-    if not thinking:
-        result["reasoning_effort"] = "none"
-        result["chat_template_kwargs"] = {"enable_thinking": False}
+    result["chat_template_kwargs"] = {
+        "enable_thinking": thinking,
+        "preserve_thinking": True,
+    }
     # A tool or JSON response schema creates a grammar, and llama.cpp currently
     # has to sample grammar-constrained output on the CPU. Plain text has no such
     # constraint, so keep sampling on the CUDA backend just as browser Fast mode

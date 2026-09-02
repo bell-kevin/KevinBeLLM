@@ -145,7 +145,7 @@ access** page:
 | Max Output Tokens | `8192` |
 | Image Support | Off (actively turn this off; Zoo defaults it on) |
 | Prompt Caching | Off |
-| Enable Reasoning Effort | Off unless the server sets `ZOO_ENABLE_THINKING` |
+| Enable Reasoning Effort | On; choose `Max` for Qwen's `xhigh` tier |
 | Enable streaming | On |
 | Include max output tokens | On |
 
@@ -156,28 +156,45 @@ If it is not listed, type the exact displayed ID into Model search and select
 
 ### Reasoning effort
 
-Zoo's Enable Reasoning Effort control offers a graded scale (low through max),
-but Qwen3.8 has no such scale: its chat template exposes thinking as the boolean
-`enable_thinking`, the same on/off state as the browser assistant's **Think**
-toggle. The gateway therefore treats every level as one request. Picking `low`
-and picking `max` send exactly the same thing upstream, and the level is dropped
-rather than forwarded, because there is nothing upstream for it to vary.
+Qwen3.8 officially supports three thinking depths: `low`, `medium`, and `xhigh`.
+The gateway defaults an omitted `reasoning_effort` to `xhigh` and forwards the
+selected official tier to llama.cpp. Zoo and other OpenAI clients commonly call
+their top choices `high` or `max`; the gateway normalizes both aliases to
+Qwen's `xhigh`, so only an official spelling reaches the model. Other values,
+including `minimal`, are rejected. An explicit `reasoning_effort: none` remains
+the per-request opt-out and selects Qwen's non-thinking mode.
 
-Thinking is off by default for Zoo and any non-`none` level is refused with a
-400. Set `ZOO_ENABLE_THINKING=true` in the private root `.env` on the server and
-redeploy `assistant-web` to allow it. Leaving it unset keeps current behaviour.
+For every request the gateway also supplies the template flags explicitly:
+`enable_thinking=true` for the three thinking tiers or `false` for `none`, plus
+`preserve_thinking=true` in both modes. A bounded `reasoning_content` string is
+accepted only on assistant messages and forwarded when the client returns it in
+later turns. This lets Qwen retain prior reasoning for agent consistency and
+prefix-cache reuse without exposing arbitrary chat-template controls to clients.
+Whether Zoo displays the streamed `reasoning_content` separately is a client UI
+concern.
 
-Turning it on is not recommended for agent work. The model is an unusually
-verbose reasoner, which is why the browser raises its cap to 8,192 tokens in
-Think mode; a coding turn that spends most of that budget thinking can fail to
-emit its tool call at all. The browser survives this because the server owns
-that loop and can bound the tool rounds, force a final answer, and strip leaked
-tool markup. Zoo owns its own loop and gets none of those guardrails, and the
-thinking text arrives on the non-standard `reasoning_content` field, which an
-OpenAI-compatible client may not render. If you do enable it, raise
-`ZOO_MAX_OUTPUT_TOKENS` (up to 16,384) so thinking does not consume the whole
-answer budget, and watch the 32,768-token context, which Zoo already shares
-between tool schemas, file contents, and conversation history.
+`ZOO_ENABLE_THINKING` defaults to `true` and acts as a deployment policy gate.
+Setting it to `false` rejects omitted or non-`none` effort with a 400; clients
+must then send `reasoning_effort: none` explicitly. Omitting the request field
+never silently downgrades quality.
+
+The gateway fills every omitted sampler with Qwen's official per-mode values:
+
+| Mode | `temperature` | `top_p` | `top_k` | `min_p` | `presence_penalty` | `repeat_penalty` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Thinking (`low`/`medium`/`xhigh`) | `1.0` | `0.95` | `20` | `0.0` | `0.0` | `1.0` |
+| Non-thinking (`none`) | `0.7` | `0.8` | `20` | `0.0` | `1.5` | `1.0` |
+
+Each client-supplied sampling field overrides only its own default after type
+and range validation. `top_k`, `min_p`, and llama.cpp's `repeat_penalty` spelling
+are supported in addition to the standard OpenAI fields; arbitrary llama.cpp
+controls and client-supplied `chat_template_kwargs` remain rejected.
+
+Deep `xhigh` reasoning can consume much of an 8,192-token output allowance
+before emitting the answer or a tool call. If long coding turns are truncated,
+raise `ZOO_MAX_OUTPUT_TOKENS` (up to 16,384), then copy the new value into Zoo.
+Keep in mind that output and input share the 32,768-token context, along with
+tool schemas, file contents, preserved reasoning, and conversation history.
 
 `ZOO_MAX_OUTPUT_TOKENS` is a server-side ceiling, and Zoo's own **Max Output
 Tokens** field is what the client actually sends. Raise the server first: a
@@ -191,9 +208,10 @@ described above. Do not place the KevinBeLLM token in a custom header; the API K
 field is what Zoo sends as `Authorization: Bearer ...` and stores as a secret.
 
 Zoo Code requires native OpenAI tool calling. KevinBeLLM forwards Zoo's bounded
-`tools`, `tool_choice`, streamed `tool_calls`, tool results, usage, and `[DONE]`
-events without running the coding tools on the server. The existing Qwen/llama.cpp
-deployment already uses native tool calls in the browser assistant.
+`tools`, `tool_choice`, streamed `tool_calls`, tool results, assistant
+`reasoning_content`, usage, and `[DONE]` events without running the coding tools
+on the server. The existing Qwen/llama.cpp deployment already uses native tool
+calls in the browser assistant.
 
 ## 4. Start with conservative Zoo permissions
 
@@ -223,8 +241,9 @@ tools on the VS Code computer, and repository text can contain prompt injection.
 - **400 tool/request error:** turn Image Support off, keep Prompt Caching off, and
   use OpenAI-compatible native tools. Arbitrary llama.cpp fields are intentionally
   rejected.
-- **400 on `reasoning_effort`:** the deployment has thinking turned off. Either
-  clear Enable Reasoning Effort in Zoo or set `ZOO_ENABLE_THINKING` on the server.
+- **400 on `reasoning_effort`:** use `low`, `medium`, `xhigh`, or `none` (`high`
+  and `max` are accepted as `xhigh`). If the deployment set
+  `ZOO_ENABLE_THINKING=false`, send `none` explicitly or re-enable thinking.
   See [Reasoning effort](#reasoning-effort).
 - **429:** the account rate limit was reached.
 - **503:** the one-slot local GPU queue is busy; retry after the supplied delay.
@@ -238,7 +257,8 @@ This repository currently bootstraps one owner account and does not provide
 public registration. Supporting other people requires an owner-controlled
 account/invitation feature; sharing the owner password or token is not supported.
 
-References: [Zoo Code OpenAI-compatible provider](https://docs.zoocode.dev/providers/openai-compatible),
+References: [Qwen3.8-27B model card](https://huggingface.co/Qwen/Qwen3.8-27B),
+[Zoo Code OpenAI-compatible provider](https://docs.zoocode.dev/providers/openai-compatible),
 [Zoo Code Marketplace listing](https://marketplace.visualstudio.com/items?itemName=ZooCodeOrganization.zoo-code),
 [Zoo Code installation](https://docs.zoocode.dev/getting-started/installing),
 [current Zoo Code extension manifest](https://github.com/Zoo-Code-Org/Zoo-Code/blob/main/src/package.json),

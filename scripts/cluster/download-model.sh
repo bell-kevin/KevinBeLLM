@@ -7,7 +7,7 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 . "${script_dir}/common.sh"
 
-preset='27b-iq4_xs'
+preset='27b-q5_k_s'
 output_file=''
 verify_only=0
 
@@ -16,7 +16,8 @@ usage() {
 Usage: download-model.sh [--preset NAME] [--output PATH] [--verify-only]
 
 Presets:
-  27b-iq4_xs    Qwen3.8-27B UD-IQ4_XS (default; layer-split over both GPUs)
+  27b-q5_k_s    Qwen3.8-27B UD-Q5_K_S (default; measured quality preset)
+  27b-iq4_xs    Qwen3.8-27B UD-IQ4_XS (faster, smaller fallback)
 
 Downloads the selected artifact at an immutable revision, then verifies both
 byte count and SHA-256. A .part file is kept for safe resume after an
@@ -57,6 +58,13 @@ case "${preset}" in
     model_filename='Qwen3.8-27B-UD-IQ4_XS.gguf'
     model_bytes='14252845984'
     model_sha256='40fac4050e940397dbf13087afd50f4734a11805bf9d65ef8ddd7483470e6199'
+    ;;
+  27b-q5_k_s)
+    model_repo='unsloth/Qwen3.8-27B-GGUF'
+    model_revision='4ca720788d1e01f1bff70c033e0d0028fd02e502'
+    model_filename='Qwen3.8-27B-UD-Q5_K_S.gguf'
+    model_bytes='18665753504'
+    model_sha256='d8d62ffcf84d42658dd6ccf9782b4d0404700af78b26d750507510c7597b5bfe'
     ;;
   *)
     cluster_die "Unknown model preset: ${preset}"

@@ -31,12 +31,16 @@ from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 
-BENCHMARK_VERSION = 2
+BENCHMARK_VERSION = 3
 FIXED_SEED = 424_242
-TEMPERATURE = 0.3
-TOP_K = 40
-TOP_P = 0.95
-MIN_P = 0.05
+# Official Qwen3.8 instruct/non-thinking sampler.  This harness measures the
+# deployment's non-reasoning transport paths; evaluate-quality.py covers xhigh.
+TEMPERATURE = 0.7
+TOP_K = 20
+TOP_P = 0.8
+MIN_P = 0.0
+PRESENCE_PENALTY = 1.5
+REPEAT_PENALTY = 1.0
 MAX_EVENT_BYTES = 8 * 1024 * 1024
 MAX_RESPONSE_BYTES = 32 * 1024 * 1024
 
@@ -283,11 +287,16 @@ def request_body(
         "top_k": TOP_K,
         "top_p": TOP_P,
         "min_p": MIN_P,
+        "presence_penalty": PRESENCE_PENALTY,
+        "repeat_penalty": REPEAT_PENALTY,
         "seed": FIXED_SEED,
         "cache_prompt": cache_prompt,
         "parse_tool_calls": True,
         "reasoning_effort": "none",
-        "chat_template_kwargs": {"enable_thinking": False},
+        "chat_template_kwargs": {
+            "enable_thinking": False,
+            "preserve_thinking": False,
+        },
         "backend_sampling": mode == "fast",
     }
     if mode == "tools":
@@ -702,6 +711,8 @@ def corpus_sha256(
         "top_k": TOP_K,
         "top_p": TOP_P,
         "min_p": MIN_P,
+        "presence_penalty": PRESENCE_PENALTY,
+        "repeat_penalty": REPEAT_PENALTY,
         "alternate_branch": alternate_branch,
     }
     encoded = json.dumps(
@@ -938,6 +949,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "top_k": TOP_K,
             "top_p": TOP_P,
             "min_p": MIN_P,
+            "presence_penalty": PRESENCE_PENALTY,
+            "repeat_penalty": REPEAT_PENALTY,
             "cache_prompt": args.cache_prompt,
             "alternate_branch": args.alternate_branch,
             "sequential": True,

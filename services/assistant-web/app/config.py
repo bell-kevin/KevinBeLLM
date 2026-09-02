@@ -113,7 +113,7 @@ class Settings:
     api_token_ttl_seconds: int = 30 * 24 * 3600
     zoo_max_output_tokens: int = 8_192
     zoo_context_window: int = 32_768
-    zoo_enable_thinking: bool = False
+    zoo_enable_thinking: bool = True
 
     def __post_init__(self) -> None:
         if self.zoo_max_output_tokens >= self.zoo_context_window:
@@ -187,7 +187,7 @@ def load_settings() -> Settings:
         zoo_context_window=_bounded_int(
             "ZOO_CONTEXT_WINDOW", 32_768, 4_096, 262_144
         ),
-        zoo_enable_thinking=_bool_env("ZOO_ENABLE_THINKING", False),
+        zoo_enable_thinking=_bool_env("ZOO_ENABLE_THINKING", True),
     )
 
 

@@ -440,45 +440,204 @@ def test_zoo_uses_backend_sampling_only_for_unconstrained_text(tmp_path) -> None
     assert "backend_sampling" not in constrained_by_json
 
 
-def test_zoo_thinking_is_opt_in_and_level_independent(tmp_path) -> None:
+def test_zoo_thinking_defaults_to_xhigh_and_forwards_supported_levels(tmp_path) -> None:
     settings = _settings(tmp_path)
     base = {
         "model": "kevinbellm-27b",
         "messages": [{"role": "user", "content": "Hello"}],
     }
 
-    # Default deployment: thinking stays off and is forced off upstream.
-    assert settings.zoo_enable_thinking is False
-    off = validate_chat_body(base, settings)
+    assert settings.zoo_enable_thinking is True
+    default = validate_chat_body(base, settings)
+    assert default["reasoning_effort"] == "xhigh"
+    assert default["chat_template_kwargs"] == {
+        "enable_thinking": True,
+        "preserve_thinking": True,
+    }
+
+    for level in ("low", "medium", "xhigh"):
+        on = validate_chat_body({**base, "reasoning_effort": level}, settings)
+        assert on["reasoning_effort"] == level
+        assert on["chat_template_kwargs"] == default["chat_template_kwargs"]
+
+    # Zoo/OpenAI clients commonly call their top tier high or max. Normalize
+    # those aliases so llama.cpp receives only Qwen's official xhigh spelling.
+    for alias in ("high", "max"):
+        on = validate_chat_body({**base, "reasoning_effort": alias}, settings)
+        assert on["reasoning_effort"] == "xhigh"
+
+    off = validate_chat_body({**base, "reasoning_effort": "none"}, settings)
     assert off["reasoning_effort"] == "none"
-    assert off["chat_template_kwargs"] == {"enable_thinking": False}
-    with pytest.raises(GatewayRequestError) as rejected:
-        validate_chat_body({**base, "reasoning_effort": "low"}, settings)
-    assert rejected.value.param == "reasoning_effort"
+    assert off["chat_template_kwargs"] == {
+        "enable_thinking": False,
+        "preserve_thinking": True,
+    }
 
-    enabled = replace(settings, zoo_enable_thinking=True)
+    disabled = replace(settings, zoo_enable_thinking=False)
+    for body in (base, {**base, "reasoning_effort": "low"}):
+        with pytest.raises(GatewayRequestError) as rejected:
+            validate_chat_body(body, disabled)
+        assert rejected.value.param == "reasoning_effort"
+    assert validate_chat_body(
+        {**base, "reasoning_effort": "none"}, disabled
+    )["reasoning_effort"] == "none"
 
-    # An absent field still means off, so existing clients are unaffected.
-    still_off = validate_chat_body(base, enabled)
-    assert still_off["reasoning_effort"] == "none"
-    assert still_off["chat_template_kwargs"] == {"enable_thinking": False}
-    assert validate_chat_body({**base, "reasoning_effort": "none"}, enabled) == still_off
-
-    # Qwen3.8 has no graded scale, so every level is the same request upstream
-    # and the level itself is never forwarded.
-    for level in ("minimal", "low", "medium", "high", "max"):
-        on = validate_chat_body({**base, "reasoning_effort": level}, enabled)
-        assert "reasoning_effort" not in on
-        assert "chat_template_kwargs" not in on
-        assert on == validate_chat_body({**base, "reasoning_effort": "high"}, enabled)
-
-    with pytest.raises(GatewayRequestError) as invalid:
-        validate_chat_body({**base, "reasoning_effort": "x" * 33}, enabled)
-    assert invalid.value.param == "reasoning_effort"
+    for value in ("minimal", "", "LOW", "x" * 33):
+        with pytest.raises(GatewayRequestError) as invalid:
+            validate_chat_body({**base, "reasoning_effort": value}, settings)
+        assert invalid.value.param == "reasoning_effort"
 
     with pytest.raises(GatewayRequestError) as wrong_type:
-        validate_chat_body({**base, "reasoning_effort": 3}, enabled)
+        validate_chat_body({**base, "reasoning_effort": 3}, settings)
     assert wrong_type.value.param == "reasoning_effort"
+
+
+def test_zoo_uses_qwen_sampling_defaults_and_validated_overrides(tmp_path) -> None:
+    settings = _settings(tmp_path)
+    base = {
+        "model": "kevinbellm-27b",
+        "messages": [{"role": "user", "content": "Hello"}],
+    }
+
+    thinking = validate_chat_body(base, settings)
+    sampling_keys = (
+        "temperature",
+        "top_p",
+        "top_k",
+        "min_p",
+        "presence_penalty",
+        "repeat_penalty",
+    )
+    assert {key: thinking[key] for key in sampling_keys} == {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 0.0,
+        "repeat_penalty": 1.0,
+    }
+
+    nonthinking = validate_chat_body(
+        {**base, "reasoning_effort": "none"}, settings
+    )
+    assert {key: nonthinking[key] for key in sampling_keys} == {
+        "temperature": 0.7,
+        "top_p": 0.8,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 1.5,
+        "repeat_penalty": 1.0,
+    }
+
+    partial = validate_chat_body({**base, "temperature": 0.25}, settings)
+    assert partial["temperature"] == 0.25
+    assert partial["top_p"] == 0.95
+    assert partial["top_k"] == 20
+    assert partial["min_p"] == 0.0
+    assert partial["presence_penalty"] == 0.0
+    assert partial["repeat_penalty"] == 1.0
+
+    overrides = {
+        "temperature": 0.25,
+        "top_p": 0.6,
+        "top_k": 7,
+        "min_p": 0.1,
+        "presence_penalty": -0.5,
+        "repeat_penalty": 1.2,
+        "frequency_penalty": 0.25,
+    }
+    customized = validate_chat_body({**base, **overrides}, settings)
+    for key, value in overrides.items():
+        assert customized[key] == value
+
+
+def test_zoo_forwards_bounded_assistant_reasoning_for_multi_turn_preservation(
+    tmp_path,
+) -> None:
+    messages = [
+        {"role": "user", "content": "Solve this."},
+        {
+            "role": "assistant",
+            "content": "The result is 42.",
+            "reasoning_content": "I checked the intermediate calculation.",
+        },
+        {"role": "user", "content": "Now verify it."},
+    ]
+    validated = validate_chat_body(
+        {"model": "kevinbellm-27b", "messages": messages}, _settings(tmp_path)
+    )
+    assert validated["messages"] == messages
+    assert validated["chat_template_kwargs"]["preserve_thinking"] is True
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        {"role": "user", "content": "Hi", "reasoning_content": "not allowed"},
+        {"role": "assistant", "content": "Hi", "reasoning_content": None},
+        {"role": "assistant", "content": "Hi", "reasoning_content": ["no"]},
+        {
+            "role": "assistant",
+            "content": "Hi",
+            "reasoning_content": "x" * 1_000_001,
+        },
+    ),
+)
+def test_zoo_rejects_invalid_reasoning_content(tmp_path, message) -> None:
+    with pytest.raises(GatewayRequestError) as invalid:
+        validate_chat_body(
+            {"model": "kevinbellm-27b", "messages": [message]},
+            _settings(tmp_path),
+        )
+    assert invalid.value.param == "messages.0.reasoning_content"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("top_k", True),
+        ("top_k", 1.5),
+        ("top_k", -1),
+        ("top_k", 262_145),
+        ("min_p", True),
+        ("min_p", -0.01),
+        ("min_p", 1.01),
+        ("repeat_penalty", True),
+        ("repeat_penalty", 0.0),
+        ("repeat_penalty", 2.01),
+    ),
+)
+def test_zoo_rejects_invalid_nonstandard_sampling_fields(
+    tmp_path, field, value
+) -> None:
+    with pytest.raises(GatewayRequestError) as invalid:
+        validate_chat_body(
+            {
+                "model": "kevinbellm-27b",
+                "messages": [{"role": "user", "content": "Hello"}],
+                field: value,
+            },
+            _settings(tmp_path),
+        )
+    assert invalid.value.param == field
+
+
+@pytest.mark.parametrize(
+    "field", ("chat_template_kwargs", "enable_thinking", "preserve_thinking")
+)
+def test_zoo_rejects_client_injection_of_internal_thinking_fields(
+    tmp_path, field
+) -> None:
+    with pytest.raises(GatewayRequestError) as invalid:
+        validate_chat_body(
+            {
+                "model": "kevinbellm-27b",
+                "messages": [{"role": "user", "content": "Hello"}],
+                field: {},
+            },
+            _settings(tmp_path),
+        )
+    assert invalid.value.param == field
 
 
 def test_stream_close_failure_still_releases_every_slot(tmp_path, monkeypatch) -> None:
@@ -607,7 +766,7 @@ def test_nonstream_tool_result_and_request_controls(tmp_path, monkeypatch) -> No
             json={
                 "model": "kevinbellm-27b",
                 "messages": [{"role": "user", "content": "hello"}],
-                "reasoning_effort": "low",
+                "reasoning_effort": "minimal",
             },
         )
         assert reasoning.status_code == 400
