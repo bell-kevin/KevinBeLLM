@@ -334,6 +334,16 @@ class ChatMessage(BaseModel):
 
     role: Literal["user", "assistant"]
     content: str = Field(min_length=1, max_length=12_000)
+    # Qwen3.8 can reuse prior reasoning to keep a multi-turn plan coherent.  The
+    # browser retains this only in its in-memory transcript; it is never written
+    # to the account database.
+    reasoning_content: str | None = Field(default=None, max_length=12_000)
+
+    @model_validator(mode="after")
+    def reasoning_belongs_to_assistant(self) -> "ChatMessage":
+        if self.reasoning_content and self.role != "assistant":
+            raise ValueError("Only assistant messages may include reasoning")
+        return self
 
 
 class ChangePasswordBody(BaseModel):
@@ -382,7 +392,13 @@ class ChatBody(BaseModel):
     def validate_history(self) -> "ChatBody":
         if self.messages[-1].role != "user":
             raise ValueError("The final message must be from the user")
-        if sum(len(message.content) for message in self.messages) > 48_000:
+        if (
+            sum(
+                len(message.content) + len(message.reasoning_content or "")
+                for message in self.messages
+            )
+            > 48_000
+        ):
             raise ValueError("The message history is too large")
         return self
 
@@ -949,7 +965,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             request.app.state.http,
                             configured,
                             body.model,
-                            [message.model_dump() for message in body.messages],
+                            [
+                                message.model_dump(exclude_none=True)
+                                for message in body.messages
+                            ],
                             emit,
                             body.reasoning,
                             tools_enabled=not body.fast,

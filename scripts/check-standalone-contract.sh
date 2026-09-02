@@ -51,6 +51,8 @@ for argument in \
   '--no-mmproj' \
   '--no-webui' \
   '--no-slots' \
+  '--reasoning-effort xhigh' \
+  '--reasoning-preserve' \
   '--ctx-checkpoints ${KEVINBELLM_LLAMA_CTX_CHECKPOINTS}' \
   '--cache-ram ${KEVINBELLM_LLAMA_CACHE_RAM}' \
   '--spec-type ${KEVINBELLM_LLAMA_SPEC_TYPE}' \
@@ -63,16 +65,16 @@ require_text "${standalone_unit}" 'UnsetEnvironment=XDG_CONFIG_HOME HOME LLAMA_A
 require_text "${standalone_unit}" 'InaccessiblePaths=-%h/.ssh -%h/.gnupg -%h/.config -/etc/llama.cpp'
 for setting in \
   'Environment=KEVINBELLM_LLAMA_CTX_SIZE=32768' \
-  'Environment=KEVINBELLM_LLAMA_BATCH_SIZE=2048' \
-  'Environment=KEVINBELLM_LLAMA_UBATCH_SIZE=512' \
+  'Environment=KEVINBELLM_LLAMA_BATCH_SIZE=512' \
+  'Environment=KEVINBELLM_LLAMA_UBATCH_SIZE=128' \
   'Environment=KEVINBELLM_LLAMA_THREADS=8' \
   'Environment=KEVINBELLM_LLAMA_THREADS_BATCH=8' \
   'Environment=KEVINBELLM_LLAMA_POLL=50' \
   'Environment=KEVINBELLM_LLAMA_POLL_BATCH=50' \
   'Environment=KEVINBELLM_LLAMA_PARALLEL=1' \
   'Environment=KEVINBELLM_LLAMA_GPU_LAYERS=all' \
-  'Environment=KEVINBELLM_LLAMA_CACHE_TYPE_K=q8_0' \
-  'Environment=KEVINBELLM_LLAMA_CACHE_TYPE_V=q8_0' \
+  'Environment=KEVINBELLM_LLAMA_CACHE_TYPE_K=q4_0' \
+  'Environment=KEVINBELLM_LLAMA_CACHE_TYPE_V=q4_0' \
   'Environment=KEVINBELLM_LLAMA_FLASH_ATTN=on' \
   'Environment=KEVINBELLM_LLAMA_SPEC_TYPE=draft-mtp' \
   'Environment=KEVINBELLM_LLAMA_SPEC_DRAFT_N_MAX=2' \
@@ -82,16 +84,19 @@ for setting in \
   'Environment=KEVINBELLM_LLAMA_CUDA_DEVICES=0,1' \
   'Environment=KEVINBELLM_LLAMA_SPLIT_MODE=layer' \
   'Environment=KEVINBELLM_LLAMA_DEVICE_LIST=CUDA0,CUDA1' \
-  'Environment=KEVINBELLM_LLAMA_TENSOR_SPLIT=64,36' \
+  'Environment=KEVINBELLM_LLAMA_TENSOR_SPLIT=67,33' \
   'Environment=KEVINBELLM_LLAMA_CACHE_REUSE=0'; do
   require_text "${standalone_unit}" "${setting}"
 done
-require_text scripts/cluster/download-model.sh "preset='27b-iq4_xs'"
+require_text scripts/cluster/download-model.sh "preset='27b-q5_k_s'"
 require_text scripts/cluster/download-model.sh "model_repo='unsloth/Qwen3.8-27B-GGUF'"
 require_text scripts/cluster/download-model.sh "model_revision='4ca720788d1e01f1bff70c033e0d0028fd02e502'"
 require_text scripts/cluster/download-model.sh "model_filename='Qwen3.8-27B-UD-IQ4_XS.gguf'"
 require_text scripts/cluster/download-model.sh "model_bytes='14252845984'"
 require_text scripts/cluster/download-model.sh "model_sha256='40fac4050e940397dbf13087afd50f4734a11805bf9d65ef8ddd7483470e6199'"
+require_text scripts/cluster/download-model.sh "model_filename='Qwen3.8-27B-UD-Q5_K_S.gguf'"
+require_text scripts/cluster/download-model.sh "model_bytes='18665753504'"
+require_text scripts/cluster/download-model.sh "model_sha256='d8d62ffcf84d42658dd6ccf9782b4d0404700af78b26d750507510c7597b5bfe'"
 require_text scripts/cluster/download-model.sh 'chmod 600 "${output_file}"'
 require_text scripts/cluster/download-model.sh 'Refusing model output-directory symlink:'
 supported_preset_count="$(awk '
@@ -100,9 +105,9 @@ supported_preset_count="$(awk '
   in_preset_case && /^  [[:alnum:]_-]+\)$/ { count++ }
   END { print count + 0 }
 ' scripts/cluster/download-model.sh)"
-[[ "${supported_preset_count}" == '1' ]] || \
-  fail "download helper supports ${supported_preset_count} presets instead of exactly one"
-require_text scripts/cluster/install-services.sh 'MODEL_PRESET must be 27b-iq4_xs'
+[[ "${supported_preset_count}" == '2' ]] || \
+  fail "download helper supports ${supported_preset_count} presets instead of exactly two"
+require_text scripts/cluster/install-services.sh 'MODEL_PRESET must be 27b-iq4_xs or 27b-q5_k_s'
 require_text scripts/cluster/install-services.sh 'LLAMA_MODEL_ALIAS must be kevinbellm-27b'
 require_text scripts/cluster/install-services.sh 'Model file not found:'
 require_text scripts/cluster/install-llama-cpp.sh '-DGGML_RPC=OFF'
@@ -149,7 +154,7 @@ require_text .env.example 'CHAT_CONCURRENCY=1'
 require_text compose.yaml 'DEFAULT_MODEL: "${DEFAULT_MODEL:-kevinbellm-27b}"'
 require_text compose.yaml 'PREFERRED_MODELS: "${PREFERRED_MODELS:-kevinbellm-27b}"'
 require_text compose.yaml 'CHAT_CONCURRENCY: "${CHAT_CONCURRENCY:-1}"'
-require_text infra/cluster/standalone.example.env 'MODEL_PRESET=27b-iq4_xs'
+require_text infra/cluster/standalone.example.env 'MODEL_PRESET=27b-q5_k_s'
 require_text infra/cluster/standalone.example.env 'LLAMA_MODEL_ALIAS=kevinbellm-27b'
 
 if bash scripts/cluster/download-model.sh --preset definitely-invalid --verify-only >/dev/null 2>&1; then
