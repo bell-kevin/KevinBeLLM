@@ -8,12 +8,12 @@
     <meta name="theme-color" content="#07110f">
     <meta
       name="description"
-      content="KevinBeLLM is a private, owner-operated AI workspace with local GPU inference and layered authentication for remote access."
+      content="KevinBeLLM is a private, owner-operated AI workspace running Qwen3.8-27B Q5_K_S with xhigh reasoning on two local GPUs."
     >
     <meta property="og:title" content="KevinBeLLM — private AI on owned hardware">
     <meta
       property="og:description"
-      content="An open-source AI workspace with a fast standalone local model and protected remote access."
+      content="An open-source AI workspace with quality-tuned local inference, measured regression checks, and protected remote access."
     >
     <meta property="og:type" content="website">
     <title>KevinBeLLM — private AI on owned hardware</title>
@@ -32,6 +32,7 @@
           <span>KevinBeLLM</span>
         </a>
         <nav aria-label="Primary navigation">
+          <a href="#quality">Quality</a>
           <a href="#hardware">Hardware</a>
           <a href="#architecture">Architecture</a>
           <a href="#boundaries">Privacy</a>
@@ -52,8 +53,9 @@
           <h1 id="hero-title">Private AI.<br><em>Protected remote access.</em></h1>
           <p class="hero-summary">
             KevinBeLLM is an open-source AI workspace served from encrypted Ubuntu
-            hardware. Its everyday model runs fully on two consumer GPUs in one host,
-            and authorized users can connect without opening a router port.
+            hardware. Its quality-tuned Qwen3.8-27B model runs fully on two consumer
+            GPUs with xhigh reasoning, and authorized users can connect without
+            opening a router port.
           </p>
           <div class="hero-actions">
             <a
@@ -83,24 +85,24 @@
             <div class="model-row">
               <div>
                 <span class="field-label">Pinned model</span>
-                <strong>Qwen3.8-27B IQ4_XS</strong>
+                <strong>Qwen3.8-27B Q5_K_S</strong>
               </div>
               <span class="selector" aria-hidden="true">Format <b>GGUF</b></span>
             </div>
             <div class="conversation">
               <div class="avatar" aria-hidden="true">K</div>
               <div class="message">
-                <p class="message-label">Fast standalone inference</p>
-                <p>The everyday model stays fully resident across both GPUs in a single owned machine; nothing leaves it to answer.</p>
+                <p class="message-label">Quality-first local inference</p>
+                <p>The Q5_K_S preset stays fully resident across both GPUs, defaults to xhigh reasoning, and preserves its reasoning across tool rounds.</p>
                 <div class="tool-pills" aria-label="Deployment components">
-                  <span>RTX 3060 + RTX 3070 · 20 GiB</span>
-                  <span>≈26 tokens/s measured</span>
-                  <span>llama.cpp</span>
+                  <span>32,768-token context</span>
+                  <span>≈30–33 tokens/s measured</span>
+                  <span>14/14 local checks</span>
                 </div>
               </div>
             </div>
             <div class="prompt-box" aria-hidden="true">
-              <span>Authenticated workspace</span>
+              <span>xhigh reasoning · authenticated workspace</span>
               <b>→</b>
             </div>
           </div>
@@ -117,12 +119,12 @@
           <article>
             <span class="feature-number">01</span>
             <h3>Local GPU inference</h3>
-            <p>A checksum-pinned 27B quantized model stays split across the two GPUs instead of relying on a hosted model API.</p>
+            <p>A checksum-pinned Q5_K_S quant stays split across the two GPUs with all model layers resident in VRAM.</p>
           </article>
           <article>
             <span class="feature-number">02</span>
             <h3>Controlled live context</h3>
-            <p>Bounded tools can retrieve web, news, weather, and model information when an answer depends on fresh data.</p>
+            <p>Xhigh reasoning is the default, while bounded tools can retrieve fresh web, news, weather, and model information when needed.</p>
           </article>
           <article>
             <span class="feature-number">03</span>
@@ -135,6 +137,38 @@
             <p>The application and deployment automation are published under the AGPL without publishing credentials or private data.</p>
           </article>
         </div>
+      </section>
+
+      <section class="quality section" id="quality" aria-labelledby="quality-title">
+        <div class="section-heading compact">
+          <p class="kicker">Measured on Machine A</p>
+          <h2 id="quality-title">More fidelity, tested on the same hardware.</h2>
+          <p>The model, sampler, and memory settings are treated as one deployment profile and checked against a fixed local corpus before they become the default.</p>
+        </div>
+
+        <div class="quality-grid">
+          <article class="metric-card">
+            <h3 class="metric-label">Local quality regression</h3>
+            <strong>14/14</strong>
+            <p>Q5_K_S passed every checked case at seed 424242. The prior IQ4_XS deployment passed 13/14.</p>
+          </article>
+          <article class="metric-card">
+            <h3 class="metric-label">Estimated AA-style neighborhood</h3>
+            <strong>≈44</strong>
+            <p>A best-effort estimate with a plausible 41–47 range—not an independently measured benchmark score.</p>
+          </article>
+          <article class="metric-card">
+            <h3 class="metric-label">Production reasoning profile</h3>
+            <strong>xhigh</strong>
+            <p>Official Qwen thinking sampling, preserved reasoning, 32K context, and up to 12,288 output tokens in the browser.</p>
+          </article>
+        </div>
+        <p class="quality-note">
+          The 14-case result is a single-seed deployment regression signal, not a general intelligence test.
+          The ≈44 estimate adjusts the hosted model's reported xhigh result for this machine's quantization,
+          32K context, and output limits; only a complete standardized run could establish an official score.
+          <a href="https://artificialanalysis.ai/models/releases/qwen3-8-27b" target="_blank" rel="external noopener noreferrer">See the hosted-mode results ↗</a>
+        </p>
       </section>
 
       <section class="hardware section" id="hardware" aria-labelledby="hardware-title">
@@ -166,8 +200,8 @@
         </div>
 
         <p class="pool-note">
-          <strong>Capacity bought with speed.</strong>
-          Pooling both cards keeps the 27B model entirely in VRAM, which is still far faster than spilling any of it into system RAM.
+          <strong>Quality bought with careful memory tuning.</strong>
+          Pooling both cards keeps the larger Q5_K_S quant entirely in VRAM with a 32,768-token context, q4_0 KV cache, and a measured 67/33 layer split.
         </p>
 
         <div class="boot-note">
@@ -204,7 +238,7 @@
           </li>
           <li>
             <span class="flow-icon" aria-hidden="true">05</span>
-            <div><strong>Local llama.cpp</strong><small>RTX 3060 + 3070 · Qwen3.8-27B</small></div>
+            <div><strong>Local llama.cpp</strong><small>RTX 3060 + 3070 · Qwen3.8-27B Q5_K_S</small></div>
           </li>
         </ol>
         <p class="flow-caption">
