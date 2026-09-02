@@ -306,16 +306,30 @@ to the account database, but preserved reasoning does share the model's context
 budget.
 
 Each non-Think llama.cpp completion is capped at 4,096 output tokens and each
-Think completion at 12,288 (`ANSWER_MAX_TOKENS` and `REASONING_MAX_TOKENS`).
+Think completion at 20,480 (`ANSWER_MAX_TOKENS` and `REASONING_MAX_TOKENS`).
 These are ceilings, not targets: the model stops at its own stop token, so a
 larger budget costs nothing on answers that never reach it and only removes
 mid-sentence truncation on long code and multi-part analysis. A tool-enabled
 browser request can invoke several completions across the bounded loop. The
-llama.cpp context is 32,768 tokens, which the 12,288-token Think ceiling shares
-with the prompt, leaving about 20,480 tokens of prompt room.
+llama.cpp context is 32,768 tokens, which the 20,480-token Think ceiling shares
+with the prompt, leaving about 12,288 tokens of prompt room.
 Typical requests fit, but the app bounds browser history by 48,000 characters
 rather than pre-tokenizing it, so an unusually token-dense history is not
 guaranteed to fit the model context.
+
+The Think ceiling was raised from 12,288 after measuring the deployed Q5_K_S
+model at `xhigh` on 2026-09-02: an ordinary "write a function and ten tests"
+request generated 12,999 tokens, about 12,200 of them reasoning, before its
+correct answer, and a harder counting problem exhausted 12,288 tokens while
+still thinking and returned empty content. Every Think request therefore also
+carries a per-request reasoning budget (`REASONING_BUDGET_TOKENS`, default
+`REASONING_MAX_TOKENS` minus `ANSWER_MAX_TOKENS`) and a budget message
+(`REASONING_BUDGET_MESSAGE`). llama.cpp counts only thinking tokens against the
+budget; when it runs out it injects the message, closes the thinking block, and
+lets the model write the answer with the remaining allowance, so a hard question
+ends in a best-effort answer rather than nothing. The standalone unit leaves
+`--reasoning-budget` unrestricted, which is what makes llama.cpp honor the
+per-request fields.
 
 ## Project layout
 

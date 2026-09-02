@@ -56,6 +56,11 @@ _ALLOWED_MESSAGE_KEYS = {
     "reasoning_content",
 }
 
+# Thinking tokens that count against the client's output allowance before
+# llama.cpp injects the budget message and forces the answer to begin. Qwen3.8 at
+# xhigh routinely thinks past 12,000 tokens on ordinary coding requests, which
+# under Zoo's default 8,192-token allowance meant an empty answer at max_tokens.
+ZOO_ANSWER_RESERVE_TOKENS = 4_096
 _OFFICIAL_REASONING_EFFORTS = {"low", "medium", "xhigh"}
 _REASONING_EFFORT_ALIASES = {"high": "xhigh", "max": "xhigh"}
 _THINKING_SAMPLING_DEFAULTS = {
@@ -96,6 +101,11 @@ def bearer_token(request: Request) -> str | None:
     ):
         return None
     return credential
+
+
+def reasoning_budget_tokens(max_tokens: int) -> int:
+    """Thinking tokens allowed before the answer is forced, leaving room for it."""
+    return max(1, max_tokens - min(ZOO_ANSWER_RESERVE_TOKENS, max_tokens // 2))
 
 
 def _plain_number(value: Any) -> bool:
@@ -432,6 +442,13 @@ def validate_chat_body(payload: Any, settings: Settings) -> dict[str, Any]:
         "enable_thinking": thinking,
         "preserve_thinking": True,
     }
+    if thinking:
+        # Per-request budget, honored because the standalone unit leaves
+        # --reasoning-budget unrestricted. When it runs out llama.cpp injects
+        # the message, closes the thinking block, and the model answers with
+        # the reserved remainder instead of hitting max_tokens mid-thought.
+        result["reasoning_budget_tokens"] = reasoning_budget_tokens(supplied_max)
+        result["reasoning_budget_message"] = settings.reasoning_budget_message
     # A tool or JSON response schema creates a grammar, and llama.cpp currently
     # has to sample grammar-constrained output on the CPU. Plain text has no such
     # constraint, so keep sampling on the CUDA backend just as browser Fast mode

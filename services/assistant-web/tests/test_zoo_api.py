@@ -454,6 +454,11 @@ def test_zoo_thinking_defaults_to_xhigh_and_forwards_supported_levels(tmp_path) 
         "enable_thinking": True,
         "preserve_thinking": True,
     }
+    # Thinking requests carry a per-request budget: the output allowance minus
+    # the answer reserve, plus the server's forced-answer message.
+    assert default["max_tokens"] == settings.zoo_max_output_tokens
+    assert default["reasoning_budget_tokens"] == settings.zoo_max_output_tokens - 4_096
+    assert default["reasoning_budget_message"] == settings.reasoning_budget_message
 
     for level in ("low", "medium", "xhigh"):
         on = validate_chat_body({**base, "reasoning_effort": level}, settings)
@@ -468,6 +473,8 @@ def test_zoo_thinking_defaults_to_xhigh_and_forwards_supported_levels(tmp_path) 
 
     off = validate_chat_body({**base, "reasoning_effort": "none"}, settings)
     assert off["reasoning_effort"] == "none"
+    assert "reasoning_budget_tokens" not in off
+    assert "reasoning_budget_message" not in off
     assert off["chat_template_kwargs"] == {
         "enable_thinking": False,
         "preserve_thinking": True,
@@ -622,8 +629,26 @@ def test_zoo_rejects_invalid_nonstandard_sampling_fields(
     assert invalid.value.param == field
 
 
+def test_zoo_reasoning_budget_reserves_answer_room_at_every_allowance() -> None:
+    from app.openai_gateway import reasoning_budget_tokens
+
+    # Large allowances keep the full 4,096-token reserve; small ones split in half
+    # so the budget never leaves the answer with nothing.
+    assert reasoning_budget_tokens(16_384) == 12_288
+    assert reasoning_budget_tokens(8_192) == 4_096
+    assert reasoning_budget_tokens(1_024) == 512
+    assert reasoning_budget_tokens(1) == 1
+
+
 @pytest.mark.parametrize(
-    "field", ("chat_template_kwargs", "enable_thinking", "preserve_thinking")
+    "field",
+    (
+        "chat_template_kwargs",
+        "enable_thinking",
+        "preserve_thinking",
+        "reasoning_budget_tokens",
+        "reasoning_budget_message",
+    ),
 )
 def test_zoo_rejects_client_injection_of_internal_thinking_fields(
     tmp_path, field

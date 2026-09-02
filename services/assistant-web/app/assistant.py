@@ -132,11 +132,35 @@ OnDelta = Callable[[str], Awaitable[None]]
 # are precisely what 2,048 was cutting off.
 #
 # Both must still fit the 32k context alongside the prompt. The composer bounds a
-# conversation at 48,000 characters (roughly 12-16k tokens), so 12,288 reasoning
-# tokens leaves about 20k for the prompt, and the reasoning budget must stay under
-# that ceiling however these are tuned.
+# conversation at 48,000 characters (roughly 12-16k tokens), so a 20,480-token
+# Think ceiling leaves about 12k for the prompt, and the ceiling must stay under
+# that however these are tuned.
+#
+# Measured 2026-09-02 on the deployed Q5_K_S model at xhigh: an ordinary "write a
+# function and ten tests" request generated 12,999 tokens, about 12,200 of them
+# reasoning, before writing a correct answer, and a harder counting problem
+# exhausted the former 12,288 ceiling while still thinking and returned empty
+# content. The ceiling is therefore the code maximum rather than 12,288.
 ANSWER_MAX_TOKENS = _bounded_env_int("ANSWER_MAX_TOKENS", 4_096, 256, 8_192)
-REASONING_MAX_TOKENS = _bounded_env_int("REASONING_MAX_TOKENS", 12_288, 1_024, 20_480)
+REASONING_MAX_TOKENS = _bounded_env_int("REASONING_MAX_TOKENS", 20_480, 1_024, 20_480)
+
+# llama.cpp counts only the tokens inside the thinking block against this budget.
+# When it runs out, the server injects the configured budget message, closes the
+# block, and lets the model write the answer with whatever remains of
+# REASONING_MAX_TOKENS. Reserving the full Fast-mode answer allowance keeps a
+# long code answer intact. Measured on the deployed model: a 4,096-token budget
+# cut an enumeration mid-way and the model still returned the correct answer.
+# The standalone unit leaves --reasoning-budget unrestricted, which is what makes
+# llama.cpp honor these per-request fields.
+_REASONING_BUDGET_DEFAULT = min(
+    max(256, REASONING_MAX_TOKENS - ANSWER_MAX_TOKENS), REASONING_MAX_TOKENS - 256
+)
+REASONING_BUDGET_TOKENS = _bounded_env_int(
+    "REASONING_BUDGET_TOKENS",
+    _REASONING_BUDGET_DEFAULT,
+    256,
+    REASONING_MAX_TOKENS - 256,
+)
 
 
 def _strip_tool_syntax(text: str) -> str:
@@ -558,6 +582,9 @@ async def _chat_once(
             "enable_thinking": True,
             "preserve_thinking": True,
         }
+        # Force the answer to begin before the ceiling is spent on thinking.
+        body["reasoning_budget_tokens"] = REASONING_BUDGET_TOKENS
+        body["reasoning_budget_message"] = settings.reasoning_budget_message
     else:
         body["reasoning_effort"] = "none"
         body["chat_template_kwargs"] = {
