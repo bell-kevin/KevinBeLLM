@@ -363,3 +363,38 @@ def test_chunked_oversize_body_is_rejected_before_json_parse(tmp_path) -> None:
         assert response.status_code == 413
         assert response.json()["detail"] == "Request body is too large"
         assert response.headers["x-request-id"]
+
+
+def test_theme_script_and_switch_are_available_before_sign_in(tmp_path) -> None:
+    async def create_user(database):
+        from app.security import hash_password
+
+        await database.initialize()
+        await database.bootstrap_user(
+            "owner@example.test",
+            "Local Owner",
+            await hash_password("a-secure-test-password"),
+        )
+
+    from app.database import Database
+    asyncio.run(create_user(Database(tmp_path, 3600, 2)))
+    application = create_app(_settings(tmp_path))
+
+    with TestClient(application) as client:
+        script = client.get("/theme.js")
+        assert script.status_code == 200
+        assert "javascript" in script.headers["content-type"]
+        assert "kevinbellm-theme" in script.text
+
+        login = client.get("/login")
+        assert login.status_code == 200
+        head, _body = login.text.split("<body", 1)
+        # The theme script must run before first paint, so it is not deferred.
+        assert '<script src="theme.js"></script>' in head
+        assert '<meta name="color-scheme" content="light dark">' in head
+        for value in ("auto", "light", "dark"):
+            assert f'<input type="radio" name="theme" value="{value}"' in login.text
+
+        # Signed-in pages stay behind the login even though the script is public.
+        assert client.get("/index.html", follow_redirects=False).status_code == 302
+        assert client.get("/zoo-code.html", follow_redirects=False).status_code == 302
