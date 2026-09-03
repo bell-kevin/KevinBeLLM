@@ -573,6 +573,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         if request.url.path.startswith(("/api/", "/v1/")):
             response.headers["Cache-Control"] = "no-store"
+        else:
+            # Pages and assets ship inside the container image and change in
+            # place under the same URL on every redeploy, so browsers and the
+            # Cloudflare edge must revalidate them instead of trusting
+            # heuristic freshness derived from Last-Modified.
+            response.headers["Cache-Control"] = "no-cache"
         if configured.secure_cookie:
             response.headers["Strict-Transport-Security"] = "max-age=31536000"
         return response
