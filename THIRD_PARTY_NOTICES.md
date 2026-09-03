@@ -13,7 +13,7 @@ The table inventories this deployment.
 |---|---|---|---|
 | llama.cpp | `b10451` | MIT | <https://github.com/ggml-org/llama.cpp/tree/b10451> |
 | Qwen3.8 27B weights | official base | Apache-2.0 | <https://huggingface.co/Qwen/Qwen3.8-27B> |
-| Qwen3.8 27B UD-IQ4_XS GGUF | `unsloth/Qwen3.8-27B-GGUF` revision `4ca720788d1e01f1bff70c033e0d0028fd02e502` | Apache-2.0 | <https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/tree/4ca720788d1e01f1bff70c033e0d0028fd02e502> |
+| Qwen3.8 27B UD-Q5_K_S GGUF (everyday) and UD-IQ4_XS GGUF (rollback) | `unsloth/Qwen3.8-27B-GGUF` revision `4ca720788d1e01f1bff70c033e0d0028fd02e502` | Apache-2.0 | <https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/tree/4ca720788d1e01f1bff70c033e0d0028fd02e502> |
 | SearXNG | commit `c01178d03` | AGPL-3.0-or-later | <https://github.com/searxng/searxng/tree/c01178d03> |
 | hyper-h2 | 4.4.1 security overlay | MIT | <https://github.com/python-hyper/h2/tree/v4.4.1> |
 | cloudflared client | 2026.7.3 | Apache-2.0 | <https://github.com/cloudflare/cloudflared/tree/2026.7.3> |
@@ -34,8 +34,11 @@ packages are pinned with distribution hashes in the checked-in lock files; the
 lock files are the authoritative inventory of installed Python package
 versions. Each dependency retains its upstream license.
 
-The everyday GGUF is `Qwen3.8-27B-UD-IQ4_XS.gguf`, exactly 14,252,845,984
+The everyday GGUF is `Qwen3.8-27B-UD-Q5_K_S.gguf`, exactly 18,665,753,504
 bytes with SHA-256
+`d8d62ffcf84d42658dd6ccf9782b4d0404700af78b26d750507510c7597b5bfe`. The
+rollback GGUF is `Qwen3.8-27B-UD-IQ4_XS.gguf`, exactly 14,252,845,984 bytes
+with SHA-256
 `40fac4050e940397dbf13087afd50f4734a11805bf9d65ef8ddd7483470e6199`.
 The download helper pins its immutable repository revision and refuses the
 artifact unless both its byte count and digest match.
