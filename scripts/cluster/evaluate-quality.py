@@ -46,7 +46,7 @@ DEFAULT_SEED = 424_242
 DEFAULT_TIMEOUT_SECONDS = 600.0
 # Matches the deployed app's Think and Fast ceilings so the gate exercises the
 # same output budget production uses.
-PROFILE_MAX_TOKENS = {"reasoning": 28_672, "nonreasoning": 4_096}
+PROFILE_MAX_TOKENS = {"reasoning": 24_576, "nonreasoning": 4_096}
 # Mirrors the assistant: llama.cpp counts only thinking tokens against the budget
 # and, when it runs out, injects this message before forcing the answer, so a
 # case that would have exhausted max_tokens mid-thought still yields a scoreable
