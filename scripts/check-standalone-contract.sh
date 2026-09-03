@@ -44,6 +44,7 @@ for argument in \
   '--split-mode ${KEVINBELLM_LLAMA_SPLIT_MODE}' \
   '--device ${KEVINBELLM_LLAMA_DEVICE_LIST}' \
   '--tensor-split ${KEVINBELLM_LLAMA_TENSOR_SPLIT}' \
+  '--override-tensor ${KEVINBELLM_LLAMA_OVERRIDE_TENSOR}' \
   '--cache-type-k ${KEVINBELLM_LLAMA_CACHE_TYPE_K}' \
   '--cache-type-v ${KEVINBELLM_LLAMA_CACHE_TYPE_V}' \
   '--flash-attn ${KEVINBELLM_LLAMA_FLASH_ATTN}' \
@@ -64,7 +65,7 @@ done
 require_text "${standalone_unit}" 'UnsetEnvironment=XDG_CONFIG_HOME HOME LLAMA_ARG_HF_REPO LLAMA_ARG_HF_FILE LLAMA_ARG_MODEL_URL LLAMA_ARG_DOCKER_REPO LLAMA_ARG_MODELS_PRESET LLAMA_ARG_MODELS_DIR'
 require_text "${standalone_unit}" 'InaccessiblePaths=-%h/.ssh -%h/.gnupg -%h/.config -/etc/llama.cpp'
 for setting in \
-  'Environment=KEVINBELLM_LLAMA_CTX_SIZE=32768' \
+  'Environment=KEVINBELLM_LLAMA_CTX_SIZE=45056' \
   'Environment=KEVINBELLM_LLAMA_BATCH_SIZE=512' \
   'Environment=KEVINBELLM_LLAMA_UBATCH_SIZE=128' \
   'Environment=KEVINBELLM_LLAMA_THREADS=8' \
@@ -85,6 +86,7 @@ for setting in \
   'Environment=KEVINBELLM_LLAMA_SPLIT_MODE=layer' \
   'Environment=KEVINBELLM_LLAMA_DEVICE_LIST=CUDA0,CUDA1' \
   'Environment=KEVINBELLM_LLAMA_TENSOR_SPLIT=67,33' \
+  'Environment=KEVINBELLM_LLAMA_OVERRIDE_TENSOR=blk[.]43[.]ffn_.*=CUDA1' \
   'Environment=KEVINBELLM_LLAMA_CACHE_REUSE=0'; do
   require_text "${standalone_unit}" "${setting}"
 done

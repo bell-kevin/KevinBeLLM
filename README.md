@@ -144,12 +144,30 @@ refuses non-loopback endpoints. Its **Local
 Quality Score** is a regression signal for this deployment, not an Artificial
 Analysis Intelligence Index score.
 
-The Q5_K_S deployment uses a `q4_0` K/V cache to retain a 32,768-token context
-while keeping every model layer on the GPUs. After the full quality run, peak
-memory was 11,872/12,288 MiB on the RTX 3060 and 7,353/8,192 MiB on the RTX
-3070. That leaves little primary-GPU margin, which is why the measured batch,
-ubatch, cache precision, and `67,33` split belong to this quant as one tested
-configuration rather than independent knobs.
+The 45,056-token configuration scored 15/16 at seed `424242` on 2026-09-03
+against the 32,768 baseline's 16/16. Both long-thinking cases passed: the
+triangle count needed 20,511 tokens and was correctly forced to answer by the
+reasoning budget, and the logic grid took 14,360. The one miss, the
+instruction-following string transform, is a coin flip for this model under
+either configuration: it passed 9 of 24 seeds at 45,056 and 10 of 24 at
+32,768, so the gate's single-seed regression flag reflects seed noise rather
+than the context change.
+
+The Q5_K_S deployment uses a `q4_0` K/V cache to retain a 45,056-token context
+while keeping every model layer on the GPUs. The layer split can only move
+whole layers, and layer 43 alone weighs 498 MiB, so the unit also moves that
+layer's three 58 MiB feed-forward matrices to the 3070 with a per-tensor
+override; layer 44 already runs there, so the move adds no PCIe hop. Measured
+on 2026-09-03, 49,152 tokens ran out of memory on the 3060 at every split, and
+36,864 without the override left it only 18 MiB. After the full quality run at
+45,056, peak memory was 11,850/12,288 MiB on the RTX 3060 and 7,615/8,192 MiB
+on the RTX 3070. That leaves little primary-GPU margin, which is why the
+measured batch, ubatch, cache precision, `67,33` split, and override belong to
+this quant as one tested configuration rather than independent knobs.
+Throughput did not move: the same benchmark measured 19.9 and 20.1 decode
+tokens/second (fast and tool-schema paths) before the change and 21.0 and 20.4
+after, with prefill at 91 and 259 versus 92 and 248 tokens/second on its short
+prompts, and a cold 43,104-token prompt prefilled at 353 tokens/second.
 
 ## Cold boots and remote availability
 
@@ -312,13 +330,13 @@ to the account database, but preserved reasoning does share the model's context
 budget.
 
 Each non-Think llama.cpp completion is capped at 4,096 output tokens and each
-Think completion at 20,480 (`ANSWER_MAX_TOKENS` and `REASONING_MAX_TOKENS`).
+Think completion at 24,576 (`ANSWER_MAX_TOKENS` and `REASONING_MAX_TOKENS`).
 These are ceilings, not targets: the model stops at its own stop token, so a
 larger budget costs nothing on answers that never reach it and only removes
 mid-sentence truncation on long code and multi-part analysis. A tool-enabled
 browser request can invoke several completions across the bounded loop. The
-llama.cpp context is 32,768 tokens, which the 20,480-token Think ceiling shares
-with the prompt, leaving about 12,288 tokens of prompt room.
+llama.cpp context is 45,056 tokens, which the 24,576-token Think ceiling shares
+with the prompt, leaving 20,480 tokens of prompt room.
 Typical requests fit, but the app bounds browser history by 48,000 characters
 rather than pre-tokenizing it, so an unusually token-dense history is not
 guaranteed to fit the model context.
@@ -327,7 +345,11 @@ The Think ceiling was raised from 12,288 after measuring the deployed Q5_K_S
 model at `xhigh` on 2026-09-02: an ordinary "write a function and ten tests"
 request generated 12,999 tokens, about 12,200 of them reasoning, before its
 correct answer, and a harder counting problem exhausted 12,288 tokens while
-still thinking and returned empty content. Every Think request therefore also
+still thinking and returned empty content. The context was then raised from
+32,768 to 45,056 tokens, the most the two GPUs hold once one layer's
+feed-forward weights move to the 3070 (see the memory notes above), so the
+ceiling could grow to 24,576 without shrinking the prompt room below its
+former 20,480. Every Think request also
 carries a per-request reasoning budget (`REASONING_BUDGET_TOKENS`, default
 `REASONING_MAX_TOKENS` minus `ANSWER_MAX_TOKENS`) and a budget message
 (`REASONING_BUDGET_MESSAGE`). llama.cpp counts only thinking tokens against the
