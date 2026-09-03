@@ -134,7 +134,8 @@ updated template. Its model path, alias, and measured tuning live in the private
 env file; its endpoint and security arguments cannot be changed there:
 
 - API: `127.0.0.1:8080` only;
-- devices: `CUDA0,CUDA1`, layer split `67,33`, every model layer on the GPUs;
+- devices: `CUDA0,CUDA1`, layer split `67,33` plus the layer-43 feed-forward
+  override onto `CUDA1`, every model layer on the GPUs;
 - Qwen reasoning defaults made explicit with `--reasoning-effort xhigh` and
   `--reasoning-preserve`; individual non-thinking requests can still select
   `reasoning_effort=none`;
@@ -176,7 +177,7 @@ card](https://huggingface.co/Qwen/Qwen3.8-27B).
 
 Treat batch 512, ubatch 128, `q4_0` K/V, the `67,33` split, and the layer-43
 override as one tested Q5 configuration; its primary GPU has only 438 MiB
-of measured peak headroom. The
+of nominal peak headroom, of which the driver reserves 377 MiB. The
 former IQ4_XS deployment used batch 2,048, ubatch 512, `q8_0` K/V, and a `64,36`
 split, but those settings are not a safe template for the larger quant.
 Benchmark changes across several fixed workloads at the application's deployed
@@ -223,7 +224,11 @@ IQ4_XS passed 13/14 (92.86%); the stable all-GPU Q5_K_S configuration passed
 14/14 (100%), gaining the instruction-following case with no losses and no
 protected-category regression. That is strong evidence for this exact local
 regression gate, but one small single-seed corpus is not a statistically broad
-intelligence measurement.
+intelligence measurement. On the 16-case corpus, the 45,056-token
+configuration scored 15/16 on 2026-09-03 against the 32,768 baseline's 16/16;
+the miss is the string-transform case, which passes 9 of 24 seeds on the new
+configuration and 10 of 24 on the old one, so it is seed noise rather than a
+regression, and both long-thinking cases passed.
 
 The resulting **Local Quality Score** is only a controlled regression signal
 for this deployment. Artificial Analysis reports [35 for its hosted
