@@ -61,7 +61,9 @@ from `unsloth/Qwen3.8-27B-GGUF`, pinned at immutable revision
 18,665,753,504-byte size and
 SHA-256 `d8d62ffcf84d42658dd6ccf9782b4d0404700af78b26d750507510c7597b5bfe`,
 with mismatched files refused. Every model layer remains on the GPUs, split
-`--tensor-split 67,33` across the two cards.
+`--tensor-split 67,33` across the two cards, with a per-tensor override that
+moves layer 43's three feed-forward matrices onto the 3070 so the 45,056-token
+context fits.
 
 The download helper supports two checksum-pinned presets at that revision. The
 deployed `27b-q5_k_s` preset is the measured everyday configuration;
@@ -72,16 +74,19 @@ On the same original 14-case quality corpus and seed `424242`, IQ4_XS passed
 Q5_K_S gained the instruction-following case, lost none, and introduced no
 regression in the protected calibration or long-context categories. This is a
 useful same-hardware regression result, not a statistically broad estimate of
-general intelligence.
+general intelligence. The corpus has since grown to 16 cases; the current
+45,056-token result is recorded under the quality harness below.
 
 The checked-in fixed-corpus throughput benchmark runs Qwen's official
 non-thinking sampler (`temperature=0.7`, `top_p=0.8`, `top_k=20`, `min_p=0`,
 `presence_penalty=1.5`, and `repeat_penalty=1`) with a fixed seed, one warm-up,
 three measured repetitions, and exactly 128 output tokens per request.
-The deployed Q5_K_S configuration has produced about 30-33 decode
-tokens/second, while a 15,395-token prompt evaluated at 377.28 tokens/second.
-These are observations from the deployment, not guarantees across output types
-or other hosts.
+On that benchmark's 128-token outputs the deployed Q5_K_S configuration
+measures about 20-21 decode tokens/second with MTP acceptance near 0.6, while
+longer real answers have reached about 30-33; a 15,395-token prompt evaluated
+at 377 tokens/second and a cold 43,104-token prompt at 353. These are
+observations from the deployment, not guarantees across output types or other
+hosts.
 
 For historical comparison, rebuilding llama.cpp for the FX-8370's actual
 `bdver2` ISA (with its unavailable LWP instruction explicitly disabled) raised
