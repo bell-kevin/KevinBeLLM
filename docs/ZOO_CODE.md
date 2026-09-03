@@ -142,7 +142,7 @@ access** page:
 | API Key | The reusable `kbm_v1_...` API key whose value is shown once |
 | Model | Explicitly select `kevinbellm-27b` (or the value shown by the page) |
 | Context Window Size | `45056` |
-| Max Output Tokens | `8192` |
+| Max Output Tokens | `16384` |
 | Image Support | Off (actively turn this off; Zoo defaults it on) |
 | Prompt Caching | Off |
 | Enable Reasoning Effort | On; choose `Max` for Qwen's `xhigh` tier |
@@ -190,18 +190,20 @@ and range validation. `top_k`, `min_p`, and llama.cpp's `repeat_penalty` spellin
 are supported in addition to the standard OpenAI fields; arbitrary llama.cpp
 controls and client-supplied `chat_template_kwargs` remain rejected.
 
-Deep `xhigh` reasoning can consume much of an 8,192-token output allowance
-before emitting the answer or a tool call. Measured on the deployed model on
-2026-09-02, an ordinary "write a function and ten tests" request thought for
-about 12,200 tokens before answering. The gateway therefore attaches a
+Deep `xhigh` reasoning can consume much of an output allowance before emitting
+the answer or a tool call. Measured on the deployed model on 2026-09-02, an
+ordinary "write a function and ten tests" request thought for about 12,200
+tokens before answering, which is why the deployment runs at the 16,384-token
+maximum: that leaves a 12,288-token thinking budget per turn and 28,672 tokens
+of input room. The gateway attaches a
 per-request reasoning budget to every thinking request: the client's output
 allowance minus a 4,096-token answer reserve (or half the allowance when it is
 smaller). llama.cpp counts only thinking tokens against it and, when it runs
 out, injects the server's `REASONING_BUDGET_MESSAGE`, closes the thinking
 block, and lets the model answer or call a tool with the reserved remainder
 instead of returning empty content at `max_tokens`. Clients cannot set the
-budget fields themselves. If long coding turns are still truncated, raise
-`ZOO_MAX_OUTPUT_TOKENS` (up to 16,384), then copy the new value into Zoo.
+budget fields themselves. `ZOO_MAX_OUTPUT_TOKENS` cannot go above 16,384; if
+long coding turns are still truncated, shorten the conversation instead.
 Keep in mind that output and input share the 45,056-token context, along with
 tool schemas, file contents, preserved reasoning, and conversation history.
 

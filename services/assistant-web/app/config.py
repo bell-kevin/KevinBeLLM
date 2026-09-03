@@ -135,8 +135,8 @@ class Settings:
     database_concurrency: int
     zoo_api_base_url: str = ""
     api_token_ttl_seconds: int = 30 * 24 * 3600
-    zoo_max_output_tokens: int = 8_192
-    zoo_context_window: int = 32_768
+    zoo_max_output_tokens: int = 16_384
+    zoo_context_window: int = 45_056
     zoo_enable_thinking: bool = True
     reasoning_budget_message: str = DEFAULT_REASONING_BUDGET_MESSAGE
 
@@ -207,10 +207,10 @@ def load_settings() -> Settings:
             _bounded_int("ZOO_TOKEN_TTL_DAYS", 30, 1, 365) * 24 * 3600
         ),
         zoo_max_output_tokens=_bounded_int(
-            "ZOO_MAX_OUTPUT_TOKENS", 8_192, 256, 16_384
+            "ZOO_MAX_OUTPUT_TOKENS", 16_384, 256, 16_384
         ),
         zoo_context_window=_bounded_int(
-            "ZOO_CONTEXT_WINDOW", 32_768, 4_096, 262_144
+            "ZOO_CONTEXT_WINDOW", 45_056, 4_096, 262_144
         ),
         zoo_enable_thinking=_bool_env("ZOO_ENABLE_THINKING", True),
         reasoning_budget_message=_reasoning_budget_message(),
