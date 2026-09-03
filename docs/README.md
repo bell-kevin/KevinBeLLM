@@ -2,9 +2,11 @@
 # Public landing page
 
 This directory is the GitHub Pages source for KevinBeLLM's public project
-landing page. It is intentionally static and contains no JavaScript, analytics,
-credential collection, runtime probes, model-health checks, or private
-configuration.
+landing page. It is intentionally static and contains no analytics, credential
+collection, runtime probes, model-health checks, or private configuration. Its
+only script is `assets/theme.js`, which drives the light, dark, and
+system-matching theme switch in the header; it keeps that single preference in
+the browser's localStorage and makes no network requests.
 
 The page explains the Qwen3.8-27B Q5_K_S service and its fully GPU-resident
 model, xhigh reasoning profile, clearly qualified local quality measurements,

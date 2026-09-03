@@ -53,11 +53,16 @@ jobs:
           node --check services/assistant-web/static/app.js
           node --check services/assistant-web/static/login.js
           node --check services/assistant-web/static/markdown.js
+          node --check services/assistant-web/static/theme.js
           node --check services/assistant-web/static/zoo-code.js
+          node --check docs/assets/theme.js
 
-      - name: Run browser Markdown renderer tests
+      - name: Check the theme script is identical on both sites
+        run: cmp docs/assets/theme.js services/assistant-web/static/theme.js
+
+      - name: Run browser script tests
         working-directory: services/assistant-web
-        run: node --test tests/markdown.test.mjs
+        run: node --test tests/markdown.test.mjs tests/theme.test.mjs
 
       - name: Check PowerShell syntax
         shell: pwsh
