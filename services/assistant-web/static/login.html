@@ -4,8 +4,9 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="dark">
-    <meta name="theme-color" content="#071310">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f3f7f5" data-light="#f3f7f5" data-dark="#071310">
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#071310" data-light="#f3f7f5" data-dark="#071310">
     <meta name="referrer" content="no-referrer">
     <meta
       http-equiv="Content-Security-Policy"
@@ -18,6 +19,8 @@
     <title>Sign in · KevinBeLLM</title>
     <link rel="icon" href="mark.svg" type="image/svg+xml">
     <link rel="stylesheet" href="styles.css">
+    <!-- Synchronous on purpose: a stored theme choice must apply before the first paint. -->
+    <script src="theme.js"></script>
     <script src="login.js" defer></script>
   </head>
   <body class="login-body">
@@ -27,10 +30,43 @@
 
     <main class="login-layout">
       <section class="login-intro" aria-labelledby="welcome-title">
-        <a class="brand brand-large" href="./login.html" aria-label="KevinBeLLM sign in">
-          <img src="mark.svg" width="44" height="44" alt="">
-          <span>KevinBeLLM</span>
-        </a>
+        <div class="login-topbar">
+          <a class="brand brand-large" href="./login.html" aria-label="KevinBeLLM sign in">
+            <img src="mark.svg" width="44" height="44" alt="">
+            <span>KevinBeLLM</span>
+          </a>
+          <div class="theme-switch" role="radiogroup" aria-label="Color theme">
+            <label class="theme-option" title="Match the system setting">
+              <input type="radio" name="theme" value="auto" checked>
+              <span class="theme-option-body">
+                <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" focusable="false">
+                  <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/>
+                  <path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/>
+                </svg>
+                <span class="theme-option-label">Auto</span>
+              </span>
+            </label>
+            <label class="theme-option" title="Light theme">
+              <input type="radio" name="theme" value="light">
+              <span class="theme-option-body">
+                <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <circle cx="12" cy="12" r="4"/>
+                  <path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/>
+                </svg>
+                <span class="theme-option-label">Light</span>
+              </span>
+            </label>
+            <label class="theme-option" title="Dark theme">
+              <input type="radio" name="theme" value="dark">
+              <span class="theme-option-body">
+                <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+                <span class="theme-option-label">Dark</span>
+              </span>
+            </label>
+          </div>
+        </div>
 
         <div class="login-copy">
           <p class="eyebrow"><span aria-hidden="true"></span> Private AI workspace</p>
