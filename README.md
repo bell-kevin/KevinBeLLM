@@ -144,6 +144,15 @@ refuses non-loopback endpoints. Its **Local
 Quality Score** is a regression signal for this deployment, not an Artificial
 Analysis Intelligence Index score.
 
+The 45,056-token configuration scored 15/16 at seed `424242` on 2026-09-03
+against the 32,768 baseline's 16/16. Both long-thinking cases passed: the
+triangle count needed 20,511 tokens and was correctly forced to answer by the
+reasoning budget, and the logic grid took 14,360. The one miss, the
+instruction-following string transform, is a coin flip for this model under
+either configuration: it passed 9 of 24 seeds at 45,056 and 10 of 24 at
+32,768, so the gate's single-seed regression flag reflects seed noise rather
+than the context change.
+
 The Q5_K_S deployment uses a `q4_0` K/V cache to retain a 45,056-token context
 while keeping every model layer on the GPUs. The layer split can only move
 whole layers, and layer 43 alone weighs 498 MiB, so the unit also moves that
@@ -151,10 +160,14 @@ layer's three 58 MiB feed-forward matrices to the 3070 with a per-tensor
 override; layer 44 already runs there, so the move adds no PCIe hop. Measured
 on 2026-09-03, 49,152 tokens ran out of memory on the 3060 at every split, and
 36,864 without the override left it only 18 MiB. After the full quality run at
-45,056, peak memory was PEAK0/12,288 MiB on the RTX 3060 and PEAK1/8,192 MiB
+45,056, peak memory was 11,850/12,288 MiB on the RTX 3060 and 7,615/8,192 MiB
 on the RTX 3070. That leaves little primary-GPU margin, which is why the
 measured batch, ubatch, cache precision, `67,33` split, and override belong to
 this quant as one tested configuration rather than independent knobs.
+Throughput did not move: the same benchmark measured 19.9 and 20.1 decode
+tokens/second (fast and tool-schema paths) before the change and 21.0 and 20.4
+after, with prefill at 91 and 259 versus 92 and 248 tokens/second on its short
+prompts, and a cold 43,104-token prompt prefilled at 353 tokens/second.
 
 ## Cold boots and remote availability
 
