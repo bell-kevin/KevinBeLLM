@@ -97,7 +97,7 @@
                 <div class="tool-pills" aria-label="Deployment components">
                   <span>45,056-token context</span>
                   <span>≈30–33 tokens/s measured</span>
-                  <span>14/14 local checks</span>
+                  <span>15/16 local checks</span>
                 </div>
               </div>
             </div>
@@ -149,13 +149,13 @@
         <div class="quality-grid">
           <article class="metric-card">
             <h3 class="metric-label">Local quality regression</h3>
-            <strong>14/14</strong>
-            <p>Q5_K_S passed every checked case at seed 424242. The prior IQ4_XS deployment passed 13/14.</p>
+            <strong>15/16</strong>
+            <p>Q5_K_S at the 45,056-token context passed 15 of 16 cases at seed 424242, including both long-thinking cases. The one miss is a string transform the model gets right about 40% of the time under any configuration.</p>
           </article>
           <article class="metric-card">
             <h3 class="metric-label">Estimated AA-style neighborhood</h3>
-            <strong>≈44</strong>
-            <p>A best-effort estimate with a plausible 41–47 range—not an independently measured benchmark score.</p>
+            <strong>≈47</strong>
+            <p>A best-effort estimate for browser Think mode with a plausible 44–50 range—not an independently measured benchmark score. Fast mode sits near the hosted non-reasoning 35.</p>
           </article>
           <article class="metric-card">
             <h3 class="metric-label">Production reasoning profile</h3>
@@ -164,9 +164,9 @@
           </article>
         </div>
         <p class="quality-note">
-          The 14-case result is a single-seed deployment regression signal, not a general intelligence test.
-          The ≈44 estimate adjusts the hosted model's reported xhigh result for this machine's quantization,
-          44K context, and output limits; only a complete standardized run could establish an official score.
+          The 16-case result is a single-seed deployment regression signal, not a general intelligence test.
+          The ≈47 estimate adjusts the hosted model's reported xhigh result of 52 for this machine's quantization,
+          44K context, and 20,480-token thinking budget; only a complete standardized run could establish an official score.
           <a href="https://artificialanalysis.ai/models/releases/qwen3-8-27b" target="_blank" rel="external noopener noreferrer">See the hosted-mode results ↗</a>
         </p>
       </section>
