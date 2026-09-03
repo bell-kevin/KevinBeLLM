@@ -150,14 +150,16 @@ env file; its endpoint and security arguments cannot be changed there:
 - no multimodal projector, embedded web UI, or slots endpoint;
 - hardened systemd filesystem, capability, namespace, and privilege controls.
 
-The measured persistent Q5_K_S configuration is a 32,768-token context, batch
+The measured persistent Q5_K_S configuration is a 45,056-token context, batch
 512, ubatch 128, eight generation and batch CPU threads, one request slot,
 `q4_0` K/V cache, flash attention, memory mapping, every model layer on the
-GPUs, and a `67,33` tensor split. Qwen3.8 MTP remains at draft maximum 2 and
-probability threshold zero. Observed Q5_K_S decode is about 30-33 tokens/second,
+GPUs, a `67,33` tensor split, and a per-tensor override that moves layer 43's
+three feed-forward matrices to CUDA1 (`KEVINBELLM_LLAMA_OVERRIDE_TENSOR`).
+Qwen3.8 MTP remains at draft maximum 2 and probability threshold zero.
+Observed Q5_K_S decode is about 30-33 tokens/second,
 and a 15,395-token prompt evaluated at 377.28 tokens/second. After the full
-quality run, peak memory was 11,872/12,288 MiB on the RTX 3060 and
-7,353/8,192 MiB on the RTX 3070. These are measurements of this Machine A, not
+quality run on 2026-09-03, peak memory was PEAK0/12,288 MiB on the RTX 3060
+and PEAK1/8,192 MiB on the RTX 3070. These are measurements of this Machine A, not
 general guarantees.
 
 Qwen publishes separate sampler recipes for its two modes. Production thinking
@@ -168,8 +170,9 @@ uses `temperature=1`, `top_p=0.95`, `top_k=20`, `min_p=0`,
 comparing configurations. See the [Qwen3.8-27B model
 card](https://huggingface.co/Qwen/Qwen3.8-27B).
 
-Treat batch 512, ubatch 128, `q4_0` K/V, and the `67,33` split as one tested Q5
-configuration; its primary GPU has only 416 MiB of measured peak headroom. The
+Treat batch 512, ubatch 128, `q4_0` K/V, the `67,33` split, and the layer-43
+override as one tested Q5 configuration; its primary GPU has only HEADROOM0 MiB
+of measured peak headroom. The
 former IQ4_XS deployment used batch 2,048, ubatch 512, `q8_0` K/V, and a `64,36`
 split, but those settings are not a safe template for the larger quant.
 Benchmark changes across several fixed workloads at the application's deployed
