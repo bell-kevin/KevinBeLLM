@@ -332,10 +332,38 @@
     }).format(parsed);
   }
 
-  function appendCredentialDetail(container, label, value) {
+  const RELATIVE_TIME_UNITS = [
+    ["day", 86_400],
+    ["hour", 3_600],
+    ["minute", 60],
+  ];
+
+  function describeRelativeTime(value, nowSeconds) {
+    if (typeof value !== "number") {
+      return "";
+    }
+    const delta = value - nowSeconds;
+    const magnitude = Math.abs(delta);
+    const formatter = new Intl.RelativeTimeFormat("en-US", { numeric: "auto" });
+    for (const [unit, seconds] of RELATIVE_TIME_UNITS) {
+      if (magnitude >= seconds) {
+        return formatter.format(Math.round(delta / seconds), unit);
+      }
+    }
+    return delta >= 0 ? "moments from now" : "moments ago";
+  }
+
+  function appendCredentialDetail(container, label, value, note) {
+    // Each label shares one grid cell with its value, so the pairs stay
+    // together no matter how many columns the list uses.
+    const group = createElement("div", "zoo-token-detail");
     const term = createElement("dt", "", label);
     const description = createElement("dd", "", value);
-    container.append(term, description);
+    if (note) {
+      description.append(createElement("small", "zoo-token-detail-note", note));
+    }
+    group.append(term, description);
+    container.append(group);
   }
 
   function renderCredentials() {
@@ -346,6 +374,7 @@
     }
 
     elements.tokenListMessage.textContent = `${state.credentials.length.toLocaleString("en-US")} active credential${state.credentials.length === 1 ? "" : "s"}.`;
+    const nowSeconds = Math.floor(Date.now() / 1000);
     for (const credential of state.credentials) {
       const item = createElement("li", "zoo-token-item");
       const summary = createElement("div", "zoo-token-summary");
@@ -354,9 +383,31 @@
       summary.append(name, status);
 
       const details = createElement("dl", "zoo-token-details");
-      appendCredentialDetail(details, "Created", formatTimestamp(credential.createdAt, "Unknown"));
-      appendCredentialDetail(details, "Expires", formatTimestamp(credential.expiresAt, "No expiry reported"));
-      appendCredentialDetail(details, "Last used", formatTimestamp(credential.lastUsedAt, "Never"));
+      const lifetimeDays =
+        typeof credential.createdAt === "number" && typeof credential.expiresAt === "number"
+          ? Math.round((credential.expiresAt - credential.createdAt) / 86_400)
+          : null;
+      const expiresRelative = describeRelativeTime(credential.expiresAt, nowSeconds);
+      appendCredentialDetail(
+        details,
+        "Created",
+        formatTimestamp(credential.createdAt, "Unknown"),
+        describeRelativeTime(credential.createdAt, nowSeconds),
+      );
+      appendCredentialDetail(
+        details,
+        "Expires",
+        formatTimestamp(credential.expiresAt, "No expiry reported"),
+        lifetimeDays === null
+          ? expiresRelative
+          : `${expiresRelative}, ${lifetimeDays.toLocaleString("en-US")} days after creation`,
+      );
+      appendCredentialDetail(
+        details,
+        "Last used",
+        formatTimestamp(credential.lastUsedAt, "Never"),
+        describeRelativeTime(credential.lastUsedAt, nowSeconds),
+      );
 
       const revoke = createElement("button", "zoo-revoke-button", "Revoke");
       revoke.type = "button";
