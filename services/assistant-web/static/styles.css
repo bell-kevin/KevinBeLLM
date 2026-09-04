@@ -2820,6 +2820,18 @@ h6.md-heading {
   white-space: nowrap;
 }
 
+.zoo-token-detail {
+  min-width: 0;
+}
+
+.zoo-token-detail-note {
+  display: block;
+  margin-top: 2px;
+  color: var(--faint);
+  font-size: 0.6rem;
+  white-space: normal;
+}
+
 .zoo-revoke-button {
   min-width: 70px;
   color: var(--danger);
@@ -2974,13 +2986,15 @@ h6.md-heading {
     gap: 9px;
   }
 
-  .zoo-token-details dt,
-  .zoo-token-details dd {
-    display: inline;
+  .zoo-token-detail {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: baseline;
+    column-gap: 7px;
   }
 
   .zoo-token-details dt {
-    margin-right: 7px;
+    margin-bottom: 0;
   }
 
   .zoo-footer {
