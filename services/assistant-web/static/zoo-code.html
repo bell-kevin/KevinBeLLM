@@ -123,10 +123,12 @@
             <ol class="zoo-steps">
               <li>Install Zoo Code, then open its panel from the VS Code Activity Bar.</li>
               <li>Open Zoo Code settings and set <strong>API Provider</strong> to <strong>OpenAI Compatible</strong>.</li>
-              <li>Paste the Base URL and a newly created credential into <strong>API Key</strong>.</li>
+              <li>Paste the Base URL shown below into <strong>Base URL</strong>, then paste a newly created credential into <strong>API Key</strong>.</li>
               <li>In the <strong>Model</strong> picker, explicitly select the model shown below. If it is not listed, search for the exact ID and choose <strong>Use custom</strong>; do not leave <code>gpt-4o</code> selected.</li>
-              <li>Set Context Window Size and Max Output Tokens. Actively turn <strong>Image Support</strong> off because Zoo enables it by default; keep Prompt Caching and <strong>Enable Reasoning Effort</strong> off.</li>
+              <li>Set <strong>Context Window Size</strong> and <strong>Max Output Tokens</strong> to the values below. Actively turn <strong>Image Support</strong> off because Zoo enables it by default, and keep <strong>Prompt Caching</strong> off.</li>
+              <li>Turn <strong>Enable Reasoning Effort</strong> on and choose <strong>Max</strong>, which this host runs as Qwen's deepest <code>xhigh</code> tier. Leaving the toggle off gives the same depth because the host defaults to <code>xhigh</code>; do not choose <strong>Minimal</strong>, which the host rejects.</li>
               <li>Turn <strong>Enable streaming</strong> and <strong>Include max output tokens</strong> on.</li>
+              <li>Remote path only: when the Base URL is published behind Cloudflare Access, add two <strong>Custom Headers</strong> rows, <code>CF-Access-Client-Id</code> and <code>CF-Access-Client-Secret</code>, from a per-device service token. The KevinBeLLM credential still goes only in API Key.</li>
             </ol>
 
             <dl class="zoo-settings" aria-label="Zoo Code provider settings">
@@ -164,7 +166,9 @@
 
             <div class="zoo-provider-note">
               Zoo Code requires OpenAI-compatible native tool calling. Explicitly select the exact
-              model ID shown above; model availability is controlled by this KevinBeLLM host. Put the credential
+              model ID shown above; model availability is controlled by this KevinBeLLM host. Max Output
+              Tokens is also this host's ceiling: a larger value is refused, and output shares the context
+              window with the prompt, tool schemas, and history. Put the credential
               only in the API Key field. Zoo Code uses VS Code Secret Storage, but exported Zoo
               settings can contain credentials, so never share an export that includes this key.
             </div>
@@ -250,7 +254,9 @@
           </div>
           <p class="zoo-card-copy">
             Revoke anything you no longer recognize or use. Revocation immediately prevents that
-            credential from making new requests.
+            credential from making new requests. <strong>Last used</strong> is the time of the most
+            recent API request made with a credential, recorded at most once every five minutes; an
+            older date means the credential has been idle, not that it stopped working.
           </p>
           <p class="zoo-list-message" id="tokenListMessage" role="status" aria-live="polite"></p>
           <ul class="zoo-token-list" id="tokenList" aria-label="Active Zoo Code credentials"></ul>

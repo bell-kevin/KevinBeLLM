@@ -121,7 +121,7 @@ a preconfigured Zoo settings export.
 ## 3. Install and configure Zoo Code
 
 Install the official Marketplace extension in VS Code 1.100 or newer. The
-current Zoo Code v3.80 package declares that minimum even though the install
+current Zoo Code 3.81 package declares that minimum even though the install
 page still mentions an older VS Code baseline:
 
 ```powershell
@@ -129,7 +129,8 @@ code --install-extension ZooCodeOrganization.zoo-code
 ```
 
 Or open Extensions (`Ctrl+Shift+X`), search for **Zoo Code**, verify the publisher
-is **ZooCodeOrg**, and install it. The official installation instructions are at
+is **Zoo Code Organization** (`ZooCodeOrganization`), and install it. The
+official installation instructions are at
 <https://docs.zoocode.dev/getting-started/installing>.
 
 In Zoo Code settings, enter the exact values shown on KevinBeLLM's **Zoo Code
@@ -145,7 +146,7 @@ access** page:
 | Max Output Tokens | `16384` |
 | Image Support | Off (actively turn this off; Zoo defaults it on) |
 | Prompt Caching | Off |
-| Enable Reasoning Effort | On; choose `Max` for Qwen's `xhigh` tier |
+| Enable Reasoning Effort | On; choose `Max` for Qwen's `xhigh` tier (off also yields `xhigh`; `Minimal` is rejected) |
 | Enable streaming | On |
 | Include max output tokens | On |
 
