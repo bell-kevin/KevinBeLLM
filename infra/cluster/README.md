@@ -12,6 +12,12 @@ Windows laptop --SSH--> Machine A:22
 The everyday model is resident across both GPUs in Machine A. Ports 3000 and
 8080 bind to loopback, with no LAN listener or router port-forward.
 
+Machine A runs Ubuntu 26.04 LTS, upgraded in place from 24.04 on 2026-09-30,
+with the 7.0 kernel, Ubuntu's NVIDIA 595-series driver and CUDA 12.4 packages,
+rootless Podman 5.7 with netavark networking, and podman-compose 1.6.0 from
+pipx. [Ubuntu updates and release upgrades](#ubuntu-updates-and-release-upgrades)
+lists what the upgrade changed.
+
 ## Encrypted boot boundary
 
 Full-disk encryption means SSH and systemd cannot start until someone physically
@@ -167,6 +173,17 @@ versus 92 and 248 tokens/second on its short prompts; a cold 43,104-token
 prompt prefilled at 353 tokens/second. These are measurements of this
 Machine A, not general guarantees.
 
+The same benchmark rerun on 2026-10-25, after the Ubuntu 26.04 upgrade
+(NVIDIA 595.99.02, CUDA 12.4 runtime), measured 21.9 and 21.4 decode
+tokens/second and 99 and 245 prefill tokens/second, and all six fixed-seed
+outputs were byte-identical to the 2026-09-03 run. Idle memory at 45,056 was
+11,760/12,288 MiB on the RTX 3060 and 7,707/8,192 MiB on the RTX 3070, rising
+to 11,793 and 7,727 MiB during the benchmark. The console's GNOME session now
+runs on Wayland and holds about 109 MiB of the 3060 where Xorg held about
+51 MiB, but llama-server's own share of the 3060 fell by about 150 MiB and its
+share of the 3070 rose by about 95 MiB, so each card kept roughly 120 MiB free
+at that peak.
+
 Qwen publishes separate sampler recipes for its two modes. Production thinking
 uses `temperature=1`, `top_p=0.95`, `top_k=20`, `min_p=0`,
 `presence_penalty=0`, and `repeat_penalty=1`; production non-thinking uses
@@ -176,8 +193,10 @@ comparing configurations. See the [Qwen3.8-27B model
 card](https://huggingface.co/Qwen/Qwen3.8-27B).
 
 Treat batch 512, ubatch 128, `q4_0` K/V, the `67,33` split, and the layer-43
-override as one tested Q5 configuration; its primary GPU has only 438 MiB
-of nominal peak headroom, of which the driver reserves 377 MiB. The
+override as one tested Q5 configuration. On 2026-09-03 its primary GPU had only
+438 MiB of nominal peak headroom, of which the driver reserves 377 MiB; since
+the Ubuntu 26.04 upgrade the 3070 is about as full as the 3060, so re-measure
+both cards after any driver, desktop, or context change. The
 former IQ4_XS deployment used batch 2,048, ubatch 512, `q8_0` K/V, and a `64,36`
 split, but those settings are not a safe template for the larger quant.
 Benchmark changes across several fixed workloads at the application's deployed
@@ -335,3 +354,31 @@ systemctl --user stop kevinbellm-llama.service
 Keep model files, `.env` files, account databases, SSH material, tunnel tokens,
 logs, and chat data out of Git. The public repository contains only examples,
 immutable artifact identities, and deployment code.
+
+### Ubuntu updates and release upgrades
+
+Machine A moved from Ubuntu 24.04 to 26.04 with `do-release-upgrade` on
+2026-09-30. These points came out of that upgrade and the weeks after it:
+
+- Unattended security updates can install a new NVIDIA userspace driver while
+  the previous kernel module stays loaded. `nvidia-smi` then fails with
+  `Failed to initialize NVML: Driver/library version mismatch`; the running
+  llama-server keeps serving, but a newly started one cannot initialize CUDA,
+  so leave it running until a console reboot. Before rebooting, check that
+  `modinfo -k <kernel> -F version nvidia` reports the new userspace version
+  for the kernel GRUB will boot. The previous kernel's module package can keep
+  the old version (7.0.0-34 did), so falling back to it leaves the GPUs
+  unusable.
+- A release upgrade removes the previous Python minor version (3.12 to 3.14
+  here). pipx's podman-compose venv then cannot import its own package, and
+  the stack cannot start. Run `pipx reinstall-all` before the next restart;
+  `scripts/compose.sh` names this fix when `podman-compose --version` fails.
+- Podman 5 replaced the CNI network backend with netavark and uses pasta for
+  rootless networking. The next stack start recreated the Compose networks,
+  and the named `kevinbellm-data` volume carried over. `podman ps` labels the
+  containers' deliberately disabled health checks `(reset)`.
+- The console's GNOME session is Wayland-only on 26.04 and holds about 109 MiB
+  of the RTX 3060, roughly twice Xorg's share; see the measurements above.
+- The upgrade left `/etc/logrotate.d/cloud-init` behind as an obsolete copy of
+  `cloud-init-base`, which made `logrotate.service` fail every night until the
+  old file was removed.

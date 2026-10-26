@@ -17,7 +17,7 @@ The table inventories this deployment.
 | SearXNG | commit `c01178d03` | AGPL-3.0-or-later | <https://github.com/searxng/searxng/tree/c01178d03> |
 | hyper-h2 | 4.4.1 security overlay | MIT | <https://github.com/python-hyper/h2/tree/v4.4.1> |
 | cloudflared client | 2026.7.3 | Apache-2.0 | <https://github.com/cloudflare/cloudflared/tree/2026.7.3> |
-| Podman | Ubuntu 24.04 package 4.9.3 | Apache-2.0 | <https://github.com/containers/podman> |
+| Podman | Ubuntu 26.04 package 5.7.0 | Apache-2.0 | <https://github.com/containers/podman> |
 | podman-compose | 1.6.0 (1.4.1 minimum) | GPL-2.0-only | <https://github.com/containers/podman-compose> |
 | Python | 3.13.15 (assistant), 3.12.13 (tools) | PSF-2.0 | <https://www.python.org/> |
 | pip | 26.2.1 (live-tools build bootstrap) | MIT | <https://github.com/pypa/pip/tree/26.2.1> |

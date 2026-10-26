@@ -14,7 +14,7 @@ tracked_files="$(git ls-files)"
 while IFS= read -r path; do
   case "${path}" in
     *.env.example|*.example.env) ;;
-    *.env|.runtime-engine|*/.runtime-engine|.bootstrap-complete|*/.bootstrap-complete)
+    *.env|*.env.bak*|.runtime-engine|*/.runtime-engine|.bootstrap-complete|*/.bootstrap-complete)
       fail 'a private runtime file is tracked'
       ;;
   esac

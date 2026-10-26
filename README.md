@@ -174,6 +174,13 @@ tokens/second (fast and tool-schema paths) before the change and 21.0 and 20.4
 after, with prefill at 91 and 259 versus 92 and 248 tokens/second on its short
 prompts, and a cold 43,104-token prompt prefilled at 353 tokens/second.
 
+After the 2026-09-30 in-place upgrade to Ubuntu 26.04 LTS, the same benchmark
+on 2026-10-25 measured 21.9 and 21.4 decode and 99 and 245 prefill
+tokens/second with byte-identical fixed-seed outputs, and each GPU kept about
+120 MiB free at the benchmark's peak. The
+[cluster helper guide](infra/cluster/README.md) has the memory details and
+upgrade notes.
+
 ## Cold boots and remote availability
 
 The server uses full-disk encryption. After power loss or shutdown, someone must

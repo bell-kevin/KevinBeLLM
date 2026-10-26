@@ -1,4 +1,5 @@
 .env
+.env.bak*
 .runtime-engine
 .bootstrap-complete
 infra/search/.env
