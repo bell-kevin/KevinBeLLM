@@ -40,11 +40,19 @@ if [[ "${engine}" == "podman" ]]; then
     exit 1
   fi
 
-  compose_version="$("${podman_compose_bin}" --version 2>/dev/null | sed -nE 's/.*[^0-9]([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -n 1)"
+  # Current releases print Podman's version before their own, so match only the
+  # podman-compose line. `|| true` keeps a broken install (such as a pipx venv
+  # whose Python was removed by a release upgrade) from tripping errexit before
+  # the error below can explain it.
+  compose_version="$("${podman_compose_bin}" --version 2>/dev/null | sed -nE 's/^podman-compose( version)?:? +v?([0-9]+\.[0-9]+\.[0-9]+).*/\2/p' | head -n 1 || true)"
   minimum_version="1.4.1"
-  if [[ -z "${compose_version}" ]] || \
-     [[ "$(printf '%s\n' "${minimum_version}" "${compose_version}" | sort -V | head -n 1)" != "${minimum_version}" ]]; then
-    echo "podman-compose >= ${minimum_version} is required; found ${compose_version:-an unknown version}." >&2
+  if [[ -z "${compose_version}" ]]; then
+    echo "${podman_compose_bin} --version failed or printed no version." >&2
+    echo "A pipx install breaks when a release upgrade removes its Python; rebuild it with: pipx reinstall-all" >&2
+    exit 1
+  fi
+  if [[ "$(printf '%s\n' "${minimum_version}" "${compose_version}" | sort -V | head -n 1)" != "${minimum_version}" ]]; then
+    echo "podman-compose >= ${minimum_version} is required; found ${compose_version}." >&2
     echo "Ubuntu 24.04's 1.0.6 package does not enforce service health dependencies." >&2
     exit 1
   fi

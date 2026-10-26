@@ -24,11 +24,17 @@ if [[ "${engine}" == "podman" ]]; then
     echo "podman-compose >= 1.4.1 must be installed before selecting Podman." >&2
     exit 1
   fi
-  compose_version="$("${podman_compose_bin}" --version 2>/dev/null | sed -nE 's/.*[^0-9]([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -n 1)"
+  # Match only the podman-compose line (current releases print Podman's version
+  # first), and let a broken install reach the error below instead of errexit.
+  compose_version="$("${podman_compose_bin}" --version 2>/dev/null | sed -nE 's/^podman-compose( version)?:? +v?([0-9]+\.[0-9]+\.[0-9]+).*/\2/p' | head -n 1 || true)"
   minimum_version="1.4.1"
-  if [[ -z "${compose_version}" ]] || \
-     [[ "$(printf '%s\n' "${minimum_version}" "${compose_version}" | sort -V | head -n 1)" != "${minimum_version}" ]]; then
-    echo "podman-compose >= ${minimum_version} is required; found ${compose_version:-an unknown version}." >&2
+  if [[ -z "${compose_version}" ]]; then
+    echo "${podman_compose_bin} --version failed or printed no version." >&2
+    echo "A pipx install breaks when a release upgrade removes its Python; rebuild it with: pipx reinstall-all" >&2
+    exit 1
+  fi
+  if [[ "$(printf '%s\n' "${minimum_version}" "${compose_version}" | sort -V | head -n 1)" != "${minimum_version}" ]]; then
+    echo "podman-compose >= ${minimum_version} is required; found ${compose_version}." >&2
     exit 1
   fi
 fi
