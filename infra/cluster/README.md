@@ -63,6 +63,35 @@ sudo ./scripts/cluster/harden-ssh.sh \
 Keep the original session open while testing. Never add an Internet-facing SSH
 router rule.
 
+### Other computers on the home network
+
+A computer with no key on Machine A, such as an Ubuntu laptop running Remmina,
+can sign in with the admin account's password once the hardening is rerun
+with `--allow-lan-passwords`:
+
+```bash
+sudo ./scripts/cluster/harden-ssh.sh \
+  --admin-user "$(id -un)" --lan-cidr 192.168.0.0/24 --enable-ufw \
+  --allow-lan-passwords
+```
+
+sshd then accepts that one account's password only from the LAN CIDR, which
+must be a private IPv4 range. Keys keep working, every other address and
+account still needs a key, and UFW still drops SSH from outside the LAN. The
+password also unlocks sudo, so make it a strong one; OpenSSH's default
+`PerSourcePenalties` slows repeated failures from any one address. Rerun
+without the flag to make the LAN key-only again.
+
+Ubuntu Desktop's Avahi daemon publishes Machine A as `kevinbellm-a.local`,
+which keeps resolving when DHCP changes its address. In Remmina, add a
+connection with protocol **SSH - Secure Shell**, server `kevinbellm-a.local`,
+authentication type **Password**, and the admin username and password. On the
+first connection Remmina shows the host key's MD5 fingerprint; accept it only
+if it matches the ED25519 MD5 line from
+`./scripts/cluster/show-host-key-fingerprints.sh` read at A's console or over
+a trusted session. From a terminal, the same sign-in is
+`ssh <admin-user>@kevinbellm-a.local`.
+
 ## 2. Build the pinned llama.cpp revision
 
 Run as A's normal login/service user:
