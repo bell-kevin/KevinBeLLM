@@ -25,9 +25,10 @@ Every application and inference port binds to loopback:
 
 The Windows laptop reaches port 3000 through an SSH local forward. Never
 port-forward ports 3000, 8080, 8090, or 8888 on the home router. SSH itself
-should use keys only and be limited by the host firewall to the trusted home
-subnet; use a VPN rather than an Internet-facing router rule if remote
-administration is later needed.
+should be limited by the host firewall to the trusted home subnet and use keys
+only; the optional `--allow-lan-passwords` hardening mode also accepts the
+admin account's password, but only from that subnet. Use a VPN rather than an
+Internet-facing router rule if remote administration is later needed.
 
 
 The optional browser-facing Cloudflare path must use a named Tunnel protected

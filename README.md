@@ -199,7 +199,8 @@ standalone installation. It covers:
 
 - physical inventory and encrypted-boot behavior;
 - stable router DHCP reservations without public port forwarding;
-- fingerprint-verified, key-only SSH from Windows;
+- fingerprint-verified, key-based SSH from Windows, plus optional password
+  sign-in from other computers on the home LAN;
 - the pinned llama.cpp source and CUDA configuration;
 - the standalone llama.cpp systemd user service;
 - checksum-verified model installation;
