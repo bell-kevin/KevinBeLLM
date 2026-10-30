@@ -303,11 +303,44 @@ and disable or remove the published route before correcting Access:
 - Keep KevinBeLLM's login enabled as defense in depth.
 - Rotate the named tunnel token immediately after suspected exposure.
 - Upgrade the pinned image deliberately after reviewing Cloudflare release
-  notes and replacing both the tag and Linux/AMD64 digest.
+  notes and replacing both the tag and Linux/AMD64 digest; see
+  [Upgrade the connector](#upgrade-the-connector).
 - Check connector health in the tunnel overview and locally with Compose `ps`.
 - Run only one connector for this route, and do not make Machine A's origin
   listen on `0.0.0.0` merely to satisfy the tunnel.
 - Stopping the connector removes remote access without stopping local inference.
+
+## Upgrade the connector
+
+Pin the fully qualified name with the Linux/AMD64 manifest digest, not the
+multi-platform index digest:
+`docker.io/cloudflare/cloudflared:<tag>@sha256:<digest>`. Ubuntu 26.04's
+container configuration defines no unqualified-search registries, so Podman
+cannot pull a short name such as `cloudflare/cloudflared`.
+
+On Machine A, pull the new image before replacing the running connector. A
+failed pull leaves the current connector serving, whereas a restart that
+cannot pull removes it and leaves the hostname on Cloudflare Error 1033:
+
+```bash
+../../scripts/compose.sh \
+  -f compose.yaml \
+  --env-file .env \
+  -p kevinbellm-remote-access \
+  pull
+../../scripts/compose.sh \
+  -f compose.yaml \
+  --env-file .env \
+  -p kevinbellm-remote-access \
+  up --detach
+curl --fail http://127.0.0.1:20241/ready
+```
+
+`up --detach` recreates only the connector, because its configuration is the
+one that changed; KevinBeLLM, its tools, search, and llama.cpp keep running.
+The October 30, 2026 upgrade left the hostname unreachable for about five
+seconds. Confirm that the new log shows `Updated to new configuration` with
+the expected origin and that four tunnel connections registered.
 
 [create-tunnel]: https://developers.cloudflare.com/tunnel/setup/
 [tunnel-token]: https://developers.cloudflare.com/tunnel/advanced/tunnel-tokens/

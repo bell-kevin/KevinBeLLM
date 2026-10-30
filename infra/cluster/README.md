@@ -411,3 +411,8 @@ Machine A moved from Ubuntu 24.04 to 26.04 with `do-release-upgrade` on
 - The upgrade left `/etc/logrotate.d/cloud-init` behind as an obsolete copy of
   `cloud-init-base`, which made `logrotate.service` fail every night until the
   old file was removed.
+- 26.04's container configuration defines no unqualified-search registries,
+  so Podman refuses to pull a short image name such as
+  `cloudflare/cloudflared`. Images pulled before the upgrade still resolve
+  from local storage, which hides the problem until a pin changes. Name the
+  registry in every image the stack pulls (`docker.io/...`, `ghcr.io/...`).

@@ -89,8 +89,24 @@ On October 30, 2026 the cloudflared pin moved to 2026.10.6. Releases before
 2026.10.2 still trust eight eMudhra (emSign) intermediate certificates with
 weak private keys, which Cloudflare disclosed on October 20, 2026; 2026.10.4
 through 2026.10.6 add further upstream security fixes (VULN-176088,
-VULN-183456 and VULN-184686). The new build has not been rescanned for the
-August findings.
+VULN-183456 and VULN-184686).
+
+Both images were rescanned that day with govulncheck 1.9.0 (Go vulnerability
+database of October 27, 2026) and Grype 0.121.0 (database of October 30,
+2026). In the 2026.7.3 binary govulncheck found the vulnerable functions of 25
+advisories, among them GO-2026-6809, the Go standard library's distrust of the
+compromised eMudhra intermediates. In 2026.10.6 it found none; its three
+module-level matches are in `golang.org/x/net/html` and
+`golang.org/x/crypto/openpgp`, which the binary does not link. Scanners that
+match quic-go by its declared version tie 2026.7.3 (v0.52.0) to
+CVE-2025-59530, CVE-2025-64702 and CVE-2026-40898: a peer-triggered panic and
+two HTTP/3 QPACK memory exhaustions. All three are fixed in 2026.10.6, whose
+quic-go fork is upstream v0.59.1 plus two Cloudflare commits, and neither
+build links quic-go's HTTP/3 package or a QUIC listener. Grype's remaining 23
+matches are Debian `libc6` and `zlib1g` entries in the distroless base image
+that Debian has not fixed or will not fix. The cloudflared binary is
+statically linked (`CGO_ENABLED=0`) and is the only program the container
+runs, so it never loads either library.
 
 The stack deliberately does not use Open WebUI v0.11.0 in its final design.
 That release's branding-restricted license is source-available but not cleanly
