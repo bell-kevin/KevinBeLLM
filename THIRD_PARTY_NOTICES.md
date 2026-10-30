@@ -16,7 +16,7 @@ The table inventories this deployment.
 | Qwen3.8 27B UD-Q5_K_S GGUF (everyday) and UD-IQ4_XS GGUF (rollback) | `unsloth/Qwen3.8-27B-GGUF` revision `4ca720788d1e01f1bff70c033e0d0028fd02e502` | Apache-2.0 | <https://huggingface.co/unsloth/Qwen3.8-27B-GGUF/tree/4ca720788d1e01f1bff70c033e0d0028fd02e502> |
 | SearXNG | commit `c01178d03` | AGPL-3.0-or-later | <https://github.com/searxng/searxng/tree/c01178d03> |
 | hyper-h2 | 4.4.1 security overlay | MIT | <https://github.com/python-hyper/h2/tree/v4.4.1> |
-| cloudflared client | 2026.7.3 | Apache-2.0 | <https://github.com/cloudflare/cloudflared/tree/2026.7.3> |
+| cloudflared client | 2026.10.6 | Apache-2.0 | <https://github.com/cloudflare/cloudflared/tree/2026.10.6> |
 | Podman | Ubuntu 26.04 package 5.7.0 | Apache-2.0 | <https://github.com/containers/podman> |
 | podman-compose | 1.6.0 (1.4.1 minimum) | GPL-2.0-only | <https://github.com/containers/podman-compose> |
 | Python | 3.13.15 (assistant), 3.12.13 (tools) | PSF-2.0 | <https://www.python.org/> |
@@ -78,12 +78,19 @@ repository, filename, size, and SHA-256 digest used by a real deployment.
 
 The August 12, 2026 release audit found no known advisories in either custom
 Python application's locked dependency set. The official SearXNG image's
-`h2` 4.4.0 finding is locally overlaid with fixed 4.4.1. The cloudflared build
-still embeds some scanner-flagged Go modules for hostile
+`h2` 4.4.0 finding is locally overlaid with fixed 4.4.1. The cloudflared
+2026.7.3 build audited then embedded some scanner-flagged Go modules for hostile
 HTTP/3 peer/server paths that this client-only Cloudflare topology does not
 expose. No newer official release was available during the audit. These are
 accepted low-reach upstream risks, not a claim of zero vulnerabilities;
 monitor and update the exact upstream pins when fixes are published.
+
+On October 30, 2026 the cloudflared pin moved to 2026.10.6. Releases before
+2026.10.2 still trust eight eMudhra (emSign) intermediate certificates with
+weak private keys, which Cloudflare disclosed on October 20, 2026; 2026.10.4
+through 2026.10.6 add further upstream security fixes (VULN-176088,
+VULN-183456 and VULN-184686). The new build has not been rescanned for the
+August findings.
 
 The stack deliberately does not use Open WebUI v0.11.0 in its final design.
 That release's branding-restricted license is source-available but not cleanly

@@ -3,7 +3,7 @@ name: kevinbellm-remote-access
 
 services:
   cloudflared:
-    image: cloudflare/cloudflared:2026.7.3@sha256:b392761b711c0e5649d9b64e1fc9a10ba0563fa3e712ed7c26bde5cc1fbe9059
+    image: docker.io/cloudflare/cloudflared:2026.10.6@sha256:50b3d325d454037038203047e5e0d8a5c759b470b7ed59b8df11d3aff85ce809
     platform: linux/amd64
     # Match the owner of secrets/tunnel-token so the ignored 0600 file stays
     # readable without running the connector as root.
